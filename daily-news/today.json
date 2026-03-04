@@ -1,0 +1,197 @@
+{
+  "code": 200,
+  "data": {
+    "_intro": "特性：1、支持传入ip参数,获取指定ip地址所在城市的天气预报. 例如http://news.topurl.cn/api?ip=101.68.1.1 2、支持传入count参数(count应为8~20的整数,默认为12),用于获取指定数量的新闻条目. 例如https://news.topurl.cn/api?count=15 ；3、支持传入category参数(可选值有:时事/国内/国际/商业),用于获取指定类目的新闻. 例如https://news.topurl.cn/api?category=时事 ；4、newsList条目中的score代表新闻的重要程度（0-100分）；5、每日18点前播报当日天气,18点后预报明日天气；6、calendar.term代表节气；7、支持https；8、单个ip15秒内最多调用20次。",
+    "calendar": {
+      "lYear": 2025,
+      "lMonth": 12,
+      "lDay": 11,
+      "animal": "蛇",
+      "yearCn": "二零二五年",
+      "monthCn": "腊月",
+      "dayCn": "十一",
+      "cYear": 2026,
+      "cMonth": 1,
+      "cDay": 29,
+      "gzYear": "乙巳",
+      "gzMonth": "己丑",
+      "gzDay": "癸卯",
+      "isToday": true,
+      "isLeap": false,
+      "nWeek": 4,
+      "ncWeek": "星期四",
+      "isTerm": false,
+      "term": ""
+    },
+    "historyList": [
+      {
+        "event": "1906年1月29日，电影在京城大受欢迎。"
+      },
+      {
+        "event": "1987年1月29日，美国华裔科学家朱经武宣布首次得到了90K以上的超导体。"
+      },
+      {
+        "event": "1866年1月29日，《约翰·克利斯朵夫》的作者罗曼·罗兰诞辰。"
+      }
+    ],
+    "newsList": [
+      {
+        "score": 75,
+        "title": "中期选举亮红灯，特朗普就移民执法态度日趋软化",
+        "url": "https://www.jiemian.com/article/13950991.html",
+        "category": "国际"
+      },
+      {
+        "score": 72,
+        "title": "工人日报评开盒信息成网诈“燃料”：暴露监管漏洞和治理短板",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32487711",
+        "category": "时事"
+      },
+      {
+        "score": 70,
+        "title": "国铁集团：误购车票限时免费退票政策将常态化实施",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488406",
+        "category": "时事"
+      },
+      {
+        "score": 70,
+        "title": "特斯拉将停产Model S和Model X，去年营收首次下滑",
+        "url": "https://www.jiemian.com/article/13949170.html",
+        "category": "商业"
+      },
+      {
+        "score": 70,
+        "title": "在银行买保险：天量存款到期后，银行柜台上升温的“替代”生意",
+        "url": "https://www.jiemian.com/article/13948211.html",
+        "category": "商业"
+      },
+      {
+        "score": 65,
+        "title": "百万粉丝女主播离婚后账号归谁？法院：属夫妻共同财产，账号归女方给予男方补偿",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488314",
+        "category": "时事"
+      },
+      {
+        "score": 65,
+        "title": "央行上海总部：2025年上海企业、居民活期存款增速双双回升",
+        "url": "https://www.jiemian.com/article/13951095.html",
+        "category": "商业"
+      },
+      {
+        "score": 90,
+        "title": "特朗普酝酿对伊朗高层动手，伊朗警告发动史无前例报复",
+        "url": "https://www.jiemian.com/article/13949746.html",
+        "category": "国际"
+      },
+      {
+        "score": 60,
+        "title": "因邀约多人殴打同学并传播视频，云南芒市4名未成年人被拘留",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488155",
+        "category": "时事"
+      },
+      {
+        "score": 55,
+        "title": "上海发布食品经营许可“说明书”：审查要求表格化，空间优化支持新业态",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488383",
+        "category": "时事"
+      },
+      {
+        "score": 50,
+        "title": "游钧当选北京市第十六届人大常委会副主任",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488916",
+        "category": "时事"
+      },
+      {
+        "score": 45,
+        "title": "成都有家长反映高一学生无一教辅、依赖打印资料，教育局回应",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32483924",
+        "category": "时事"
+      },
+      {
+        "score": 85,
+        "title": "缅北明家犯罪集团案11名罪犯被执行死刑",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488742",
+        "category": "时事"
+      },
+      {
+        "score": 85,
+        "title": "2026年春运全社会跨区域人员流动量预计将达95亿人次",
+        "url": "https://www.thepaper.cn/newsDetail_forward_32488331",
+        "category": "时事"
+      },
+      {
+        "score": 75,
+        "title": "金价续创历史，多家银行再度抬高积存金准入门槛",
+        "url": "https://www.jiemian.com/article/13950428.html",
+        "category": "商业"
+      }
+    ],
+    "phrase": {
+      "phrase": "博而不精",
+      "explain": "形容学识丰富，但不精深。",
+      "from": "《后汉书·马融传》：“贾君精而不博，郑君博而不精；既精既博，吾何加焉。”",
+      "example": "",
+      "simple": "bebj",
+      "pinyin": "bó ér bù jīng"
+    },
+    "sentence": {
+      "wrong": false,
+      "author": "毛泽东",
+      "sentence": "我们不但要提出任务，而且要解决完成任务的方法问题。"
+    },
+    "poem": {
+      "content": [
+        "扰扰厅前走羸瘵，中有老人扶杖拜。",
+        "天公霹雳耳不闻，犹为子孙争地界。"
+      ],
+      "type": "poem",
+      "title": "桐庐厅覩论事叟",
+      "author": "施肩吾"
+    },
+    "weather": {
+      "city": "北京",
+      "weatherOf": "today",
+      "detail": {
+        "date": "2026-01-29",
+        "text_day": "多云",
+        "code_day": "4",
+        "text_night": "多云",
+        "code_night": "4",
+        "high": "1",
+        "low": "-4",
+        "rainfall": "0.00",
+        "precip": "0.00",
+        "wind_direction": "西南",
+        "wind_direction_degree": "225",
+        "wind_speed": "8.4",
+        "wind_scale": "2",
+        "humidity": "72"
+      }
+    },
+    "deadline": false,
+    "code": "2022",
+    "swiperList": [
+      {
+        "name": "leaf",
+        "url": "https://tvax1.sinaimg.cn/large/620b53f8gy1h7bmens9hcj20xc1e0k2m.jpg",
+        "thumbUrl": "https://tvax1.sinaimg.cn/large/620b53f8gy1h7ctfovep6j20xc0dcmzk.jpg"
+      },
+      {
+        "name": "lake",
+        "url": "https://tvax1.sinaimg.cn/large/620b53f8gy1h7ar3r39gsj20xc1e0wmk.jpg",
+        "thumbUrl": "https://tvax1.sinaimg.cn/large/620b53f8gy1h7ar4iwboij20xc0dc77p.jpg"
+      },
+      {
+        "name": "bee",
+        "url": "https://tvax1.sinaimg.cn/large/620b53f8gy1h8dug5w3mxj20xc1e0jvb.jpg",
+        "thumbUrl": "https://tvax1.sinaimg.cn/large/620b53f8gy1h8dugfmh74j20xc0dc0u7.jpg"
+      },
+      {
+        "name": "cafe",
+        "url": "https://tvax1.sinaimg.cn/large/620b53f8gy1h7auyldevxj20xc1e0jvv.jpg",
+        "thumbUrl": "https://tvax1.sinaimg.cn/large/620b53f8gy1h7auyxzqoej20xc0dcta0.jpg"
+      }
+    ]
+  },
+  "message": "成功"
+}
