@@ -8,17 +8,16 @@ import sys
 
 API_URL = "https://news.topurl.cn/api"
 
-def fetch_news(ip="202.106.0.20", count=60):
+def fetch_news(ip="202.106.0.20"):
     """
     Fetch news from the API.
-    
+
     Args:
         ip: IP address for weather location (default: 202.106.0.20 - gets full dataset)
-        count: Number of news items to fetch (default 60 for full dataset)
-    
+
     Returns:
         dict: Parsed JSON response with full news list
-    
+
     Note:
         Using ip=202.106.0.20 is the "magic key" to get complete news dataset.
         Category filtering should be done locally, not via API.
@@ -26,8 +25,6 @@ def fetch_news(ip="202.106.0.20", count=60):
     params = []
     if ip:
         params.append(f"ip={ip}")
-    if count:
-        params.append(f"count={count}")
     
     url = API_URL
     if params:
@@ -56,8 +53,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Fetch daily news from topurl.cn')
     parser.add_argument('--ip', default='202.106.0.20', help='IP address (default: 202.106.0.20 for full dataset)')
-    parser.add_argument('--count', type=int, default=60, help='Number of news items (default: 60 for full dataset)')
     args = parser.parse_args()
-    
-    result = fetch_news(ip=args.ip, count=args.count)
+
+    result = fetch_news(ip=args.ip)
     print(json.dumps(result, ensure_ascii=False, indent=2))
