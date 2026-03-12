@@ -19,7 +19,7 @@ def editorial_pick(news_list, target=12):
         return []
     
     # 按分数排序
-    sorted_news = sorted(news_list, key=lambda x: x.get('score', 0), reverse=True)
+    sorted_news = sorted(news_list, key=lambda x: x.get('score') or 0, reverse=True)
     
     selected = []
     seen_titles = []
