@@ -43,8 +43,8 @@ def editorial_pick(news_list, target=12):
             if len(selected) >= target:
                 break
             add_news(news)
-        # 如果去重后不够10条，放宽相似度限制
-        if len(selected) < 10:
+        # 如果去重后不够目标数量，放宽相似度限制
+        if len(selected) < target:
             for news in sorted_news:
                 if len(selected) >= target:
                     break
@@ -88,8 +88,8 @@ def editorial_pick(news_list, target=12):
         if news not in selected:
             add_news(news)
     
-    # 保底：如果还不够10条，放宽相似度限制
-    if len(selected) < 10:
+    # 保底：如果还不够目标数量，放宽相似度限制
+    if len(selected) < target:
         for news in sorted_news:
             if len(selected) >= target:
                 break
