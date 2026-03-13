@@ -1,7 +1,7 @@
 ---
 name: openclaw-workspace-builder
 description: "通过交互式对话引导非技术用户定制 OpenClaw/Nanobot Workspace 配置文件。适用场景：用户想创建 AI 助手配置、需要 SOUL.md/AGENTS.md/USER.md 等文件、不熟悉 Markdown 或配置文件编写、希望通过问答方式快速生成专属 Workspace。支持个人助理、项目管理、内容创作、客服、数据分析等商务办公场景。"
-user-invokable: true
+user-invocable: true
 metadata:
   openclaw:
     emoji: "🏗️"
