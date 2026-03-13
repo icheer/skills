@@ -6,10 +6,54 @@
 
 | 技能包 | 适用场景 |
 |--------|---------|
+| [openclaw-workspace-builder](#openclaw-workspace-builder) | 交互式引导生成 AI 助手 Workspace 配置 |
 | [great-product-skills](#great-product-skills) | 从想法到可交互原型的完整产品工作流 |
 | [max-search-skills](#max-search-skills) | 基于 Tavily 的深度网络搜索 |
 | [daily-news](#daily-news) | 每日中文新闻简报生成 |
 | [noiz-ai-skills](#noiz-ai-skills) | 类人化语音与 TTS 工具集 |
+
+---
+
+## openclaw-workspace-builder
+
+> 通过 3 轮对话（约 5 分钟）引导非技术用户定制专属的 OpenClaw / Nanobot Workspace 配置文件，无需了解 Markdown 或配置文件格式。
+
+### 对话流程
+
+```
+第一轮（3 问）→ 场景定位
+第二轮（2-3 问）→ 个性化风格与习惯
+第三轮（条件触发）→ 工具与权限设置
+确认 → 批量生成配置文件
+```
+
+### 生成文件
+
+| 文件 | 说明 | 是否必须 |
+|------|------|--------|
+| `SOUL.md` | AI 的性格和价值观 | ✅ 必须 |
+| `IDENTITY.md` | AI 的名字和角色定义 | ✅ 必须 |
+| `AGENTS.md` | 工作流程和规则 | ✅ 必须 |
+| `USER.md` | 用户画像和偏好 | ✅ 必须 |
+| `TOOLS.md` | 可接入的外部工具（飞书、钉钉等） | 条件生成 |
+| `MEMORY.md` | 重要历史记忆（项目管理 / 客服场景） | 条件生成 |
+
+### 支持场景
+
+- **个人行政助理** — 邮件处理、日程安排
+- **项目管理** — 项目进度跟踪、团队协作（含 MEMORY.md）
+- **内容创作** — 文案、报告起草
+- **客服支持** — 客户咨询处理（含 MEMORY.md）
+- **数据分析** — 数据整理、报表生成
+- **通用助理** — 灵活适配
+
+### 平台兼容
+
+- **OpenClaw** — 完全兼容，保持 SOUL.md 和 IDENTITY.md 独立
+- **Nanobot / NanoClaw** — 自动将 IDENTITY.md 合并到 SOUL.md
+- **Claude Code / Cursor / Windsurf** — 遵循 SoulSpec 标准，理论兼容
+
+**触发词：** 创建 AI 助手配置、生成 SOUL.md、配置 Workspace、定制 AI 助手、`/workspace`
 
 ---
 
@@ -129,10 +173,11 @@ python scripts/search.py search --question "你的问题" --search-json '{...}'
 在对话中直接用自然语言触发，Claude 会根据上下文激活对应技能。也可以用 `/` 命令直接调用某个 skill。
 
 ```
-"帮我梳理一下这个产品方向"   → pm-strategist
-"根据刚才的讨论写个 PRD"     → spec-engineer  
-"做一个可以点击的 demo"      → frontend-prototype-builder
-"现在搜一下最新消息"         → max-search-skills
+"帮我配置一个 AI 助手 Workspace" → openclaw-workspace-builder
+"帮我梳理一下这个产品方向"       → pm-strategist
+"根据刚才的讨论写个 PRD"         → spec-engineer  
+"做一个可以点击的 demo"          → frontend-prototype-builder
+"现在搜一下最新消息"             → max-search-skills
 ```
 
 ### OpenClaw

@@ -108,9 +108,9 @@ clawhub install openclaw-workspace-builder
 
 ## 📚 参考资源
 
-- SoulSpec开放标准
-- OpenClaw官方文档
-- Nanobot文档
+- [SoulSpec开放标准](https://soulspec.org/)
+- [OpenClaw官方文档](https://openclaw.org/)
+- [Nanobot文档](https://nanobot.dev/)
 
 ---
 
