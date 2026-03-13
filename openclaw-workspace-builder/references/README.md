@@ -21,7 +21,7 @@ openclaw-workspace-builder/
 请安装这个仓库指定路径下的Skills https://github.com/icheer/skills/tree/main/openclaw-workspace-builder
 ```
 
-OpenClaw 会自动完成技能文件clone，无需手动操作，仅需新建会话即可开始使用
+OpenClaw 会自动完成技能文件clone，无需手动操作，新建会话即可开始使用
 
 ### 方法2: 手动安装
 
@@ -30,7 +30,7 @@ OpenClaw 会自动完成技能文件clone，无需手动操作，仅需新建会
    - **Nanobot**: `~/.nanobot/skills/`
    - **其他平台**: 参考平台文档的技能目录位置
 
-2. 重启AI助手,技能将自动加载
+2. 重启AI助手或新建会话，技能将自动加载
 
 ## 💡 使用方式
 
