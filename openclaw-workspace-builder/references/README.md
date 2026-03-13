@@ -5,15 +5,25 @@
 ```
 openclaw-workspace-builder/
 ├── SKILL.md                    # 主技能文件(对话流程、生成逻辑)
-├── references/
-│   ├── generation-rules.md     # 文件生成规则详解
-│   └── scenes.md               # 5大场景模板库
-└── README.md                   # 本文件
+└── references/
+    ├── generation-rules.md     # 文件生成规则详解
+    ├── scenes.md               # 5大场景模板库
+    └── README.md               # 本文件
 ```
 
 ## 🚀 安装方法
 
-### 方法1:手动安装(推荐)
+### 方法1: 通过 OpenClaw 一句话安装(推荐)
+
+直接告诉 OpenClaw：
+
+```
+请安装这个仓库指定路径下的Skills https://github.com/icheer/skills/tree/main/openclaw-workspace-builder
+```
+
+OpenClaw 会自动完成技能文件clone，无需手动操作，仅需新建会话即可开始使用
+
+### 方法2: 手动安装
 
 1. 将整个 `openclaw-workspace-builder/` 目录复制到:
    - **OpenClaw**: `~/.openclaw/skills/`
@@ -22,12 +32,6 @@ openclaw-workspace-builder/
 
 2. 重启AI助手,技能将自动加载
 
-### 方法2:通过ClawHub安装(如已发布)
-
-```bash
-clawhub install openclaw-workspace-builder
-```
-
 ## 💡 使用方式
 
 ### 主动调用(推荐)
@@ -35,7 +39,7 @@ clawhub install openclaw-workspace-builder
 在对话中输入:
 
 ```
-/workspace
+/workspace-builder
 ```
 
 或
