@@ -47,7 +47,7 @@ export TAVILY_API_KEY="YOUR_TAVILY_API_KEY"
 
 **加载优先级**：环境变量 > `~/.tavily_api_key` 文件
 
-**获取 API Key**：访问 https://app.tavily.com/home
+**获取 API Key**：访问 <https://app.tavily.com/home>
 
 ## 使用方式
 
@@ -104,20 +104,22 @@ python scripts/search.py search \
 
 ## 完整工作流示例
 
-假设用户问："大班的孩子通常容易得哪些病？"
+假设用户问："打工人最近流行什么减压方式？"
 
 ### Step 1 — 先用 `tavily-keyword-extractor` 生成搜索配置
 
 输出：
+
 ```json
 {
+  "refined_question": "职场人士当前主流的压力管理方法和减压活动有哪些？",
   "search_queries": [
-    "幼儿园大班 5-6岁 儿童常见疾病",
-    "学龄前儿童 传染病 预防",
-    "幼儿园 疾病统计 数据"
+    "职场人士 减压方式 2026",
+    "上班族 压力管理 流行趋势",
+    "工作压力 缓解方法 调查报告"
   ],
   "num_results": 7,
-  "reasoning": "..."
+  "reasoning": "用户说的'打工人'是网络用语（指职场人士/上班族），拆解为当前趋势、管理方法、调查数据三个维度"
 }
 ```
 
@@ -125,21 +127,22 @@ python scripts/search.py search \
 
 ```bash
 python scripts/search.py search \
-  --question "大班的孩子通常容易得哪些病？" \
-  --search-json '{"search_queries":["幼儿园大班 5-6岁 儿童常见疾病","学龄前儿童 传染病 预防","幼儿园 疾病统计 数据"],"num_results":7}'
+  --question "打工人最近流行什么减压方式？" \
+  --search-json '{"search_queries":["职场人士 减压方式 2026","上班族 压力管理 流行趋势","工作压力 缓解方法 调查报告"],"num_results":7}'
 ```
 
 ### Step 3 — 基于脚本输出回答用户
 
 脚本会输出完整的搜索结果摘要，你需要：
+
 1. 阅读所有搜索结果
-2. 提取关键信息（常见疾病类型、发病率、预防措施）
+2. 提取关键信息（流行减压方式、趋势变化、专家建议）
 3. 综合叙述，避免简单复制粘贴
 4. 在回答末尾列出参考来源
 
 ## 特殊情况处理
 
-### 情况 1：search_queries 为空
+### 情况 1：search\_queries 为空
 
 如果输入的 JSON 中 `search_queries` 为空数组，脚本会输出：
 
@@ -156,13 +159,15 @@ using your own knowledge:
 ### 情况 2：API Key 未配置
 
 脚本会输出详细的配置引导并退出（exit code 1）。你需要：
+
 1. 告知用户需要配置 Tavily API Key
 2. 提供配置命令：`python scripts/search.py config --set-api-key YOUR_KEY`
-3. 引导用户访问 https://app.tavily.com/home 获取密钥
+3. 引导用户访问 <https://app.tavily.com/home> 获取密钥
 
 ### 情况 3：所有搜索失败
 
 脚本会输出错误信息并退出（exit code 1）。可能原因：
+
 - API Key 无效
 - 网络连接问题
 - Tavily 服务故障
