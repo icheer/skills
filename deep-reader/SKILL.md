@@ -1,6 +1,6 @@
 ---
 name: deep-reader
-description: Use this skill when the user wants to deeply read, analyze, or extract insights from a web article. Triggers on: providing a URL link, or "article analysis," or using magic commands like /ELI5, /Challenge, /Action, /Graph, /Deep on a previously shared article. The skill fetches the article content with proper headers (mimicking WeChat browser), converts it to clean Markdown, and provides a cognitive-enhanced analysis report. Even if the user doesn't explicitly mention "fetch," "scrape," or "URL," this skill activates when article analysis is implied.
+description: Use this skill when the user wants to deeply read, analyze, or extract insights from a web article. Triggers on: providing a URL link, or "深度阅读" or "article analysis," or using magic commands like /ELI5, /Challenge, /Action, /Graph, /Deep on a previously shared article. The skill fetches the article content with proper headers (mimicking WeChat browser), converts it to clean Markdown, and provides a cognitive-enhanced analysis report. Even if the user doesn't explicitly mention "fetch," "scrape," or "URL," this skill activates when article analysis is implied.
 ---
 
 # 深度阅读专家 (Deep Reader)
