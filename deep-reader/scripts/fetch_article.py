@@ -34,7 +34,7 @@ def fetch_html(url):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090a13) UnifiedPCWindowsWechat(0xf254101f) XWEB/16389 SideBar Flue',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
+        # 不主动请求 gzip/deflate/br 压缩，避免 requests 自动解压失败导致二进制垃圾
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
         'Sec-Fetch-Dest': 'document',
@@ -56,8 +56,13 @@ def fetch_html(url):
 def extract_body(html):
     """提取 body 内容，减少无关噪音"""
     from bs4 import BeautifulSoup
+    if isinstance(html, bytes):
+        # 让 BS4 检测编码后解码为 str，避免 bytes 被当作 str 处理
+        dammit = BeautifulSoup(html, 'html.parser')
+        encoding = dammit.original_encoding or 'utf-8'
+        html = html.decode(encoding, errors='replace')
     soup = BeautifulSoup(html, 'html.parser')
-    
+
     # 移除干扰元素
     for tag in soup.find_all(['script', 'style', 'noscript', 'iframe', 
                                'nav', 'header', 'footer', 'aside', 'menu',
@@ -70,7 +75,7 @@ def extract_body(html):
     
     # 尝试提取 article 或 main
     body = soup.find('article') or soup.find('main') or soup.find('body')
-    return str(body) if body else html
+    return str(body) if body else html  # noqa: R502
 
 def clean_html_to_markdown(html_content):
     """清理 HTML 属性，转换为 Markdown"""
