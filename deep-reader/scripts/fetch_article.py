@@ -9,6 +9,7 @@
 import sys
 import re
 import os
+import json
 import subprocess
 
 # 全局导入（check_dependencies 会在运行时确保依赖已安装）
@@ -76,6 +77,45 @@ def extract_body(html):
     # 尝试提取 article 或 main
     body = soup.find('article') or soup.find('main') or soup.find('body')
     return str(body) if body else html  # noqa: R502
+
+def extract_title(html_bytes):
+    """从原始 HTML 提取页面标题"""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html_bytes, 'html.parser')
+    tag = soup.find('title')
+    if tag:
+        title = tag.get_text(strip=True)
+        # 去掉常见后缀，如 " - 站点名" 或 " | 站点名"
+        title = re.split(r'\s*[-|_\u2013\u2014]\s*', title)[0].strip()
+        if title:
+            return title
+    h1 = soup.find('h1')
+    if h1:
+        t = h1.get_text(strip=True)
+        if t:
+            return t
+    return ''
+
+def count_content_length(md_text):
+    """计算混合字数：中文字符数 + 英文词数"""
+    # 去掉 Markdown 图片和链接语法，保留文字
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', md_text)
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'[#*_`>~]', ' ', text)
+
+    # 统计中文字符（CJK 主区 + 扩展 A + 兼容区）
+    chinese_count = len(re.findall(
+        r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]', text
+    ))
+
+    # 去掉中文后统计英文/数字词
+    without_cjk = re.sub(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]', ' ', text)
+    english_words = len([
+        w for w in without_cjk.split()
+        if w and w[0].isascii() and (w[0].isalpha() or w[0].isdigit())
+    ])
+
+    return chinese_count + english_words
 
 def clean_html_to_markdown(html_content):
     """清理 HTML 属性，转换为 Markdown"""
@@ -155,18 +195,30 @@ def main():
 
         # 抓取
         html = fetch_html(url)
-        
+
+        # 提取标题（从原始 HTML bytes）
+        title = extract_title(html)
+
         # 提取 body
         body = extract_body(html)
-        
+
         # 转换 Markdown
         md = clean_html_to_markdown(body)
-        
-        # 清理
+
+        # 计算字数（截断前，反映原始文章长度）
+        content_length = count_content_length(md)
+
+        # 清理（含超长截断）
         md = cleanup_markdown(md)
-        
-        # 输出
-        print(md)
+
+        # 输出 JSON
+        result = {
+            "title": title,
+            "url": url,
+            "content": md,
+            "content_length": content_length
+        }
+        print(json.dumps(result, ensure_ascii=False))
         
     except subprocess.CalledProcessError as e:
         print(f"Failed to install dependencies: {e}", file=sys.stderr)

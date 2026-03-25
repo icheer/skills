@@ -12,15 +12,15 @@ description: Use this skill when the user wants to deeply read, analyze, or extr
 
 ### Step 1: 检测输入类型
 检查用户消息是否包含 URL：
-- **有 URL** → 立刻执行 `scripts/fetch_article.py {{url}}`，将输出追加到消息
-- **无 URL，但有 `<article_content>`** → 已有上下文，继续分析
+- **有 URL** → 立刻执行 `scripts/fetch_article.py {{url}}`，解析返回的 JSON，提取 `title`、`url`、`content`、`content_length` 字段，进入模式 A
+- **无 URL，但有文章内容** → 已有上下文，继续分析
 - **无 URL，也无上下文** → 进入交互问答模式
 - **魔法指令**（`/ELI5` `/Challenge` `/Action` `/Graph` `/Deep`）→ 检查是否有上下文，有则执行对应操作
 
 ### Step 2: 分析模式判定
 | 模式 | 触发条件 | 执行动作 |
 |------|----------|----------|
-| **模式 A：深度分析** | 输入含 `<article_content>` | 提取 URL 和字数，立刻生成完整分析报告 |
+| **模式 A：深度分析** | 脚本返回 JSON，或用户直接提供文章内容 | 使用 JSON 中的 `title`、`url`、`content`、`content_length` 生成完整分析报告 |
 | **模式 B：交互问答** | 自然语言提问或魔法指令 | 基于上下文响应，不重复输出固定板块 |
 
 ### Step 3: 输出报告（模式 A）
@@ -34,8 +34,8 @@ description: Use this skill when the user wants to deeply read, analyze, or extr
 ## 标准输出协议
 
 ### 1. 阅前情报 (Meta-Info)
-🔗 本文来源：[URL]
-📚 全文字数：X 字
+🔗 本文来源：[{title}]({url})
+📚 全文字数：{content_length} 字词
 
 - **一句话速读**：30 字以内概括核心价值
 - **文章含金量**：打分（1-10）并用一句话说明
@@ -96,5 +96,5 @@ description: Use this skill when the user wants to deeply read, analyze, or extr
 ## Resources
 
 ### scripts/
-- `fetch_article.py` - Fetch article content from URL with WeChat browser headers, convert to clean Markdown, and output for analysis.
-- `fetch_article.sh` - If Python script fails (or Python environment is unavailable), use this shell script as a fallback to fetch article content.
+- `fetch_article.py` - Fetch article content from URL (WeChat browser headers), convert to Markdown, output JSON: `{"title", "url", "content", "content_length"}`. `content_length` = 中文字符数 + 英文词数（字词数），统计于截断前。
+- `fetch_article.sh` - Fallback (curl-based); outputs the same JSON structure but `content` is plain text (no Markdown conversion). Use when Python packages are unavailable.

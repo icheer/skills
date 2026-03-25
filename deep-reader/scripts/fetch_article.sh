@@ -15,7 +15,7 @@ try:
 except Exception:
     pass
 
-import re, subprocess
+import json, re, subprocess
 from bs4 import BeautifulSoup
 
 url = sys.argv[1]
@@ -37,6 +37,16 @@ if not raw:
     exit(1)
 
 soup = BeautifulSoup(raw, 'html.parser')
+
+# 提取标题
+title = ''
+title_tag = soup.find('title')
+if title_tag:
+    title = re.split(r'\s*[-_]\s*', title_tag.get_text(strip=True))[0].strip()
+if not title:
+    h1 = soup.find('h1')
+    if h1:
+        title = h1.get_text(strip=True)
 
 # 微信正文通过 JS 注入 content_noencode，格式：content_noencode: JsDecode('\\x3c...')
 content_html = None
@@ -67,5 +77,19 @@ else:
         text = body.get_text(separator='\n', strip=True) if body else ''
 
 lines = [l for l in text.split('\n') if l.strip()]
-print('\n'.join(lines[:500]))
-" "$URL" 2>&1 | head -c 48000
+content = '\n'.join(lines[:500])
+
+# 计算字数：用 ord() 避免 shell 环境下 \u 转义问题
+def count_length(t):
+    zh = sum(1 for c in t if 0x4e00 <= ord(c) <= 0x9fff or 0x3400 <= ord(c) <= 0x4dbf)
+    en = len([w for w in t.split() if w and w[0].isascii() and (w[0].isalpha() or w[0].isdigit())])
+    return zh + en
+
+result = {
+    'title': title,
+    'url': url,
+    'content': content,
+    'content_length': count_length(text)
+}
+print(json.dumps(result, ensure_ascii=False))
+" "$URL"
