@@ -11,18 +11,22 @@ import re
 import os
 import subprocess
 
+# 全局导入（check_dependencies 会在运行时确保依赖已安装）
+import requests
+from bs4 import BeautifulSoup
+from markdownify import markdownify
+
+
 def check_dependencies():
-    """检测并安装缺失依赖"""
+    """检测并安装缺失依赖（运行时兜底）"""
     try:
-        import requests
-        from bs4 import BeautifulSoup
-        from markdownify import markdownify
-        return True
+        import requests  # noqa: F401
+        from bs4 import BeautifulSoup  # noqa: F401
+        from markdownify import markdownify  # noqa: F401
     except ImportError:
         print("Installing dependencies...", file=sys.stderr)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", 
+        subprocess.check_call([sys.executable, "-m", "pip", "install",
                                "-q", "requests", "beautifulsoup4", "markdownify"])
-        return True
 
 def fetch_html(url):
     """抓取 HTML，伪装微信浏览器"""
@@ -43,8 +47,11 @@ def fetch_html(url):
     
     response = requests.get(url, headers=headers, timeout=15)
     response.raise_for_status()
-    response.encoding = response.apparent_encoding or 'utf-8'
-    return response.text
+
+    # 返回原始 bytes，由 extract_body 中的 BeautifulSoup 负责编码检测。
+    # 微信等站点 meta charset 声明 UTF-8 但正文实际为 GBK，
+    # BeautifulSoup 的 UnicodeDammit 会尽量智能处理混合编码。
+    return response.content
 
 def extract_body(html):
     """提取 body 内容，减少无关噪音"""
@@ -75,7 +82,9 @@ def clean_html_to_markdown(html_content):
     # 保留语义标签的 class/id（可选，markdownify 会保留部分）
     # 移除所有行内样式和数据属性
     for tag in soup.find_all(True):
-        attrs_to_remove = ['style', 'data-', 'class', 'id', 'onclick', 
+        if tag.attrs is None:
+            continue
+        attrs_to_remove = ['style', 'data-', 'class', 'id', 'onclick',
                            'onload', 'onerror', 'rel', 'target']
         for attr in attrs_to_remove:
             if attr == 'data-':
@@ -118,6 +127,12 @@ def cleanup_markdown(md):
     return md.strip()
 
 def main():
+    # 强制 stdout 为 UTF-8，避免 Windows GBK 控制台导致中文输出乱码
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
     if len(sys.argv) < 2:
         print("Usage: python fetch_article.py <url>", file=sys.stderr)
         sys.exit(1)
@@ -130,12 +145,9 @@ def main():
         sys.exit(1)
     
     try:
-        # 检测依赖
+        # 检测依赖（运行时兜底安装）
         check_dependencies()
-        import requests
-        from bs4 import BeautifulSoup
-        from markdownify import markdownify
-        
+
         # 抓取
         html = fetch_html(url)
         
