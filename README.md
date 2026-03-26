@@ -21,7 +21,7 @@
 | 来源 | 技能包 | 说明 |
 |------|--------|------|
 | [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) | skill-creator | Anthropic官方提供的元技能：从零创建技能、修改优化现有技能、定量评估性能，含盲测对比与触发词优化 |
-| [NoizAI/skills](https://github.com/NoizAI/skills) | noiz-ai-skills | 类人化语音与 TTS 工具集，含 `characteristic-voice`、`chat-with-anyone`、`daily-news-caster`、`tts`、`video-translation` |
+| [NoizAI Skills](https://github.com/NoizAI/skills) | noiz-ai-skills | 类人化语音与 TTS 工具集，含 `characteristic-voice`、`chat-with-anyone`、`daily-news-caster`、`tts`、`video-translation` |
 
 ---
 
