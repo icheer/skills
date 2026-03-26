@@ -11,7 +11,16 @@
 | [max-search-skills](#max-search-skills) | 基于 Tavily 的深度网络搜索 |
 | [deep-reader](#deep-reader) | 网页文章深度抓取 + 认知增强分析报告 |
 | [daily-news](#daily-news) | 每日中文新闻简报生成 |
-| [noiz-ai-skills](#noiz-ai-skills) | 类人化语音与 TTS 工具集 |
+
+---
+
+## 收藏集
+
+以下为外部 Skills 收藏，通过 OpenClaw Bot 直接命令其安装即可使用。
+
+| 来源 | 技能包 | 说明 |
+|------|--------|------|
+| [NoizAI/skills](https://github.com/NoizAI/skills) | noiz-ai-skills | 类人化语音与 TTS 工具集，含 `characteristic-voice`、`chat-with-anyone`、`daily-news-caster`、`tts`、`video-translation` |
 
 ---
 
@@ -231,20 +240,6 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 
 ---
 
-## noiz-ai-skills
-
-> 托管于独立仓库：[icheer/noiz-ai-skills](https://github.com/icheer/noiz-ai-skills/tree/main/skills)
-
-专注语音交互场景的技能集，为 AI 赋予更自然的表达方式。
-
-| 技能 | 功能 |
-|------|------|
-| `characteristic-voice` | 带情绪和人格特征的语音表达 |
-| `chat-with-anyone` | 模拟与任意对象（人、角色、概念）对话 |
-| `daily-news-caster` | 新闻主播风格的播报语态 |
-| `tts` | 文字转语音完整流程 |
-| `video-translation` | 视频内容翻译 |
-
 ---
 
 ## 使用方式
@@ -267,7 +262,7 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 直接在聊天中告诉 OpenClaw Bot 安装目标仓库即可，它会自动完成克隆和注册：
 
 ```
-请安装这个仓库的 Skills：https://github.com/icheer/noiz-ai-skills
+请安装这个仓库的 Skills：https://github.com/NoizAI/skills
 ```
 
 安装后在对话中直接叫技能名，或用 `/` 命令调用。
