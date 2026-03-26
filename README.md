@@ -9,6 +9,7 @@
 | [openclaw-workspace-builder](#openclaw-workspace-builder) | 交互式引导生成 AI 助手 Workspace 配置 |
 | [great-product-skills](#great-product-skills) | 从想法到可交互原型的完整产品工作流 |
 | [max-search-skills](#max-search-skills) | 基于 Tavily 的深度网络搜索 |
+| [deep-reader](#deep-reader) | 网页文章深度抓取 + 认知增强分析报告 |
 | [daily-news](#daily-news) | 每日中文新闻简报生成 |
 | [noiz-ai-skills](#noiz-ai-skills) | 类人化语音与 TTS 工具集 |
 
@@ -142,6 +143,86 @@ python scripts/search.py search --question "你的问题" --search-json '{...}'
 
 ---
 
+## deep-reader
+
+> 给一个 URL，深度抓取网页内容并生成认知增强型分析报告。支持微信公号、Hexo 博客等主流平台。
+
+### 工作流程
+
+```
+用户提供 URL
+    ↓
+scripts/fetch_article.py（或 .sh 回退版）
+    ↓
+提取 title / content / content_length
+    ↓
+Sage（认知增强型阅读专家）→ 完整分析报告
+    ↓
+魔法指令深度互动
+```
+
+### 核心能力
+
+**抓取引擎**（`fetch_article.py` / `fetch_article.sh`）
+
+| 特性 | `fetch_article.py` | `fetch_article.sh` |
+|------|-------------------|---------------------|
+| 依赖 | requests + BeautifulSoup + markdownify | curl + Python + BeautifulSoup |
+| 输出格式 | 完整 Markdown | 纯文本 |
+| 编码处理 | 自动检测（含混合编码兜底） | 自动检测 |
+| 回退方案 | 依赖安装失败时自动调 | 自动调用 |
+
+抓取时自动处理：
+
+- 伪装微信浏览器 UA（抓取微信公众号更佳）
+- 绕过 `Accept-Encoding: gzip` 自动解压失效问题
+- 自动检测 GBK / UTF-8 混合编码（微信公号正文 GBK + meta UTF-8）
+- 微信 JS 注入正文（`content_noencode` → `\x` 解码）
+- Hexo 等静态博客直接提取 `<article>` / `<main>`
+
+输出为 JSON：
+```json
+{
+  "title": "文章标题",
+  "url": "https://...",
+  "content_length": 3200,
+  "content": "Markdown 格式正文"
+}
+```
+
+**分析专家（Sage）**
+
+批判性思维教练，不仅总结文章，还帮助用户构建知识体系。输出协议包含：
+
+- **阅前情报** — 一句话速读、金量评分、推荐人群
+- **逻辑解构** — 还原思考路径，引用原文 + 深度解读
+- **批判性视角** — 盲点探测、逻辑漏洞、利益相关方分析
+- **知识迁移** — 跨学科模型关联、跨界类比
+- **苏格拉底式追问** — 反事实、行动转化、底层质询
+
+### 魔法指令
+
+| 指令 | 动作 |
+|------|------|
+| `/ELI5` | 用极简喻体重述核心逻辑（类比讲给5岁孩子听） |
+| `/Challenge` | 扮演反方辩手，列出 3 个最强反驳观点 |
+| `/Action` | 转化为具体可执行的 To-Do List |
+| `/Graph` | 用 ASCII 画出逻辑流程图或概念关系图 |
+| `/Deep` + 问题 | 深度挖掘，针对文章内任意微观细节追问 |
+
+### 触发方式
+
+```
+"帮我深度分析这篇文章：https://mp.weixin.qq.com/s/..."  → 直接抓取 + 分析
+"深度阅读" + 粘贴正文内容                                 → 有内容，直接分析
+"/ELI5" 或 "/Challenge"（在有上文时）                     → 魔法指令
+"帮我抓取这个页面"                                       → 仅抓取
+```
+
+**触发词：** 深度阅读、深度分析、文章解读、URL 链接、抓取网页
+
+---
+
 ## daily-news
 
 每天生成一份中文纯文本简报，内容来自 topurl.cn API，包含时事热点、国内外新闻、历史上的今天、成语和名言。自动去重分类，方便直接复制分享。
@@ -175,9 +256,10 @@ python scripts/search.py search --question "你的问题" --search-json '{...}'
 ```
 "帮我配置一个 AI 助手 Workspace" → openclaw-workspace-builder
 "帮我梳理一下这个产品方向"       → pm-strategist
-"根据刚才的讨论写个 PRD"         → spec-engineer  
+"根据刚才的讨论写个 PRD"         → spec-engineer
 "做一个可以点击的 demo"          → frontend-prototype-builder
 "现在搜一下最新消息"             → max-search-skills
+"帮我深度分析这篇公众号文章"      → deep-reader
 ```
 
 ### OpenClaw
