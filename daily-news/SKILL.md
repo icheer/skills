@@ -132,6 +132,8 @@ The script generates **plain text** in the following format:
 ```
 
 **DO NOT** format the output as HTML or Markdown. The output must be plain text only.
+**DO NOT** add extra introductions or conclusions, **DO NOT** add unnecessary dividers or markdown formatting.
+Just output the briefing content directly.
 
 ## Examples
 
