@@ -11,6 +11,7 @@
 | [max-search-skills](#max-search-skills) | 基于 Tavily 的深度网络搜索 |
 | [deep-reader](#deep-reader) | 网页文章深度抓取 + 认知增强分析报告 |
 | [daily-news](#daily-news) | 每日中文新闻简报生成 |
+| [geek-news](#geek-news) | 极客科技新闻简报生成 |
 
 ---
 
@@ -235,9 +236,17 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 
 ## daily-news
 
-每天生成一份中文纯文本简报，内容来自 topurl.cn API，包含时事热点、国内外新闻、历史上的今天、成语和名言。自动去重分类，方便直接复制分享。
+每天生成一份中文纯文本简报，内容来自 [news.topurl.cn](https://news.topurl.cn) API，包含时事热点、国内外新闻、历史上的今天、成语和名言。自动去重分类，方便直接复制分享。
 
 **触发词：** 每日新闻、今日简报、新闻简报
+
+---
+
+## geek-news
+
+从 [geek.keyi.ma](https://geek.keyi.ma) 获取 AI 整理的极客科技新闻，生成纯文本简报。数据来源于 Tavily 搜索引擎以及 Hacker News，由 AI 生成标题、摘要和标签。
+
+**触发词：** 极客日报、geek news、科技简报、HN news summary
 
 ---
 
@@ -256,6 +265,7 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 "做一个可以点击的 demo"          → frontend-prototype-builder
 "现在搜一下最新消息"             → max-search-skills
 "帮我深度分析这篇公众号文章"      → deep-reader
+"给我一份极客日报"               → geek-news
 ```
 
 ### OpenClaw
