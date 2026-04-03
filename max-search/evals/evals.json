@@ -1,0 +1,20 @@
+{
+  "skill_name": "max-search",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "/max-search DeepSeek 最近有什么进展？",
+      "expected_output": "Should decompose into multiple orthogonal search queries (News, Technical dimensions), call search.py, and produce a synthesized Markdown answer with real citations"
+    },
+    {
+      "id": 1,
+      "prompt": "/max-search 打工人最近流行什么减压方式？",
+      "expected_output": "Should decompose Chinese casual phrasing (打工人) into standard terms, use Chinese-dominant queries with multiple dimensions (Data, Opinion), call search.py, synthesize with citations"
+    },
+    {
+      "id": 2,
+      "prompt": "/max-search 帮我写一个 Python 列表推导式，要求同时用条件过滤和循环",
+      "expected_output": "Should detect this is a coding task not requiring real-time search (no search_queries), and answer directly using internal knowledge without calling search.py"
+    }
+  ]
+}
