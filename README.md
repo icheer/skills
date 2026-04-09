@@ -8,10 +8,11 @@
 |--------|---------|
 | [openclaw-workspace-builder](#openclaw-workspace-builder) | 交互式引导生成 AI 助手 Workspace 配置 |
 | [great-product-skills](#great-product-skills) | 从想法到可交互原型的完整产品工作流 |
-| [max-search-skills](#max-search-skills) | 基于 Tavily 的深度网络搜索 |
+| [max-search](#max-search) | 最大化信息覆盖的深度网络搜索 |
 | [deep-reader](#deep-reader) | 网页文章深度抓取 + 认知增强分析报告 |
 | [daily-news](#daily-news) | 每日中文新闻简报生成 |
 | [geek-news](#geek-news) | 极客科技新闻简报生成 |
+| [mean-assistant](#mean-assistant) | 技术型毒舌助手，精准答案 + 专业讽刺 |
 
 ---
 
@@ -122,34 +123,35 @@ PM 策略讨论  PRD 文档    前端原型    UX 走查报告
 
 ---
 
-## max-search-skills
+## max-search
 
-> 让 Claude 在回答问题前先做一次像样的搜索，而不是直接凭记忆作答。两个技能配合使用效果最佳。
+> 最大化信息覆盖的深度搜索。通过关键词智能拆解 → 并行 Tavily 搜索 → 综合分析，一站式完成深度调研式搜索。
 
-### tavily-keyword-extractor
+**触发词：** `/max-search`、深度搜索、max search、全面搜索、帮我搜一下、做个调研、帮我调查一下
 
-把你的自然语言问题拆解成适合搜索引擎的关键词组合。区分哪些话题适合用英文搜（CS、Web3、国际金融）、哪些用中文搜（中国政策、A股），并判断当前问题是否真的需要联网查询。
+### 工作流程
 
-输出为 JSON，供 `tavily-max-search` 直接消费：
-
-```json
-{
-  "search_queries": ["keyword1", "keyword2"],
-  "num_results": 7,
-  "reasoning": "为什么拆成这几个词"
-}
+```
+用户输入: /max-search <自然语言问题>
+    ↓
+Step 1 — 关键词拆解（自动判断是否需要搜索，多维拆解）
+Step 2 — 并行 Tavily 搜索（自动聚合结果、过滤低质量域名）
+Step 3 — 综合回答（交叉验证、带来源链接的 Markdown 输出）
 ```
 
-### tavily-max-search
+### 核心能力
 
-拿到关键词后并行发起多路 Tavily 搜索，聚合结果、过滤低质量域名，30 秒超时兜底。需要 Python 3.8+ 和 Tavily API Key。
+- **智能判断**：闲聊/基础知识无需搜索，直接回答；实时信息/事实核查触发搜索
+- **多维拆解**：Definition / News / Data / Opinion / Comparison / Technical 六个维度
+- **语言策略**：CS/Web3/国际金融 英文为主；中国政策/A股 中文为主
+- **配置简单**：需要 Python 3.8+ 和 [Tavily API Key](https://app.tavily.com/home)
 
 ```bash
-# 首次配置
-python scripts/search.py config --set-api-key YOUR_KEY
+# 首次配置 API Key
+python {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_KEY
 
-# 执行搜索（配合 keyword-extractor 的 JSON 输出）
-python scripts/search.py search --question "你的问题" --search-json '{...}'
+# 执行搜索
+python {{INSkillDir}}/scripts/search.py search --question "..." --search-json '{...}'
 ```
 
 ---
@@ -250,6 +252,36 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 
 ---
 
+## mean-assistant
+
+> 技术专家，但表达方式充满刻薄的专业讽刺。精准答案 + 毒舌风格，复杂问题反而会得到尊重。
+
+**触发词：** `/mean`、毒舌、刻薄、讽刺、挖苦
+
+### 核心原则
+
+**黄金比例**：讽刺内容 ≤ 40%，实质内容 ≥ 60%
+
+### 刻薄度评分
+
+| 问题等级 | 特征 | 讽刺强度 |
+|---------|------|---------|
+| 1级 | 基础常识、一搜就有答案 | 5/5（最高） |
+| 2级 | 简单搜索可解决的常识 | 4/5 |
+| 3级 | 需要专业知识的普通问题 | 3/5 |
+| 4级 | 深度推理、系统设计、复杂调试 | 2/5 |
+| 5级 | 展现深度思考的前沿问题 | 1/5（最低） |
+
+### 使用示例
+
+```
+用户: "AI是怎么工作的？"
+→ 5/5 刻薄度：毫不留情讽刺 + 完整技术解释
+
+用户: "在CAP定理约束下，如何权衡一致性和可用性？"
+→ 1/5 刻薄度：略带讽刺的认可 + 深度专业分析
+```
+
 ---
 
 ## 使用方式
@@ -260,12 +292,13 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 
 ```
 "帮我配置一个 AI 助手 Workspace" → openclaw-workspace-builder
-"帮我梳理一下这个产品方向"       → pm-strategist
+"帮我梳理一下这个产品方向"        → pm-strategist
 "根据刚才的讨论写个 PRD"         → spec-engineer
 "做一个可以点击的 demo"          → frontend-prototype-builder
-"现在搜一下最新消息"             → max-search-skills
-"帮我深度分析这篇公众号文章"      → deep-reader
+"现在搜一下最新消息"             → max-search
+"帮我深度分析这篇公众号文章"       → deep-reader
 "给我一份极客日报"               → geek-news
+"用毒舌风格解释一下"             → mean-assistant
 ```
 
 ### OpenClaw
@@ -273,7 +306,7 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 直接在聊天中告诉 OpenClaw Bot 安装目标仓库即可，它会自动完成克隆和注册：
 
 ```
-请安装这个仓库的 Skills：https://github.com/NoizAI/skills
+请安装这个仓库的 Skill：https://github.com/icheer/skills/tree/main/max-search
 ```
 
 安装后在对话中直接叫技能名，或用 `/` 命令调用。
