@@ -132,16 +132,25 @@ python {{INSkillDir}}/scripts/search.py search \
 ### API Key 配置（首次使用）
 
 ```bash
-# 查看配置状态
+# 查看配置状态（含已加载的 key 数量）
 python {{INSkillDir}}/scripts/search.py config
 
-# 设置 API Key（推荐）
+# 设置单个 API Key（保存到 ~/.tavily_api_key）
 python {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_TAVILY_API_KEY
 ```
 
-- 密钥保存到 `~/.tavily_api_key`（文件权限 0600），后续自动加载
-- 或设置环境变量 `TAVILY_API_KEY`
-- 获取 Key：<https://app.tavily.com/home>
+支持多 Key 轮询（每次搜索随机选一个）：
+
+- **推荐：`~/.env`**（标准 KEY=VALUE 格式，逗号或换行分隔）
+  ```
+  TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
+  ```
+- **环境变量**：`export TAVILY_API_KEY="tvly-key1,tvly-key2"`
+- **`~/.tavily_api_key`**（旧格式，向后兼容）
+
+加载优先级：环境变量 → `~/.env` → `~/.tavily_api_key`
+
+获取 Key：<https://app.tavily.com/home>
 
 ---
 

@@ -19,6 +19,8 @@ Requires:
 import argparse
 import json
 import os
+import random
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +45,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 TAVILY_URL = "https://api.tavily.com/search"
 TAVILY_KEY_FILE = Path.home() / ".tavily_api_key"
+DOTENV_FILE = Path.home() / ".env"
 
 EXCLUDE_DOMAINS = [
     # 中文 — 强烈偏见 / 伪科学
@@ -75,16 +78,55 @@ EXCLUDE_DOMAINS = [
 # ---------------------------------------------------------------------------
 # API Key management
 # ---------------------------------------------------------------------------
-def load_api_key() -> Optional[str]:
-    """Load Tavily API key: env var first, then ~/.tavily_api_key file."""
-    env_key = os.environ.get("TAVILY_API_KEY", "").strip()
-    if env_key:
-        return env_key
+def _split_keys(raw: str) -> list:
+    """Split a raw string by comma or newline, strip whitespace, drop empties."""
+    return [k.strip() for k in re.split(r"[,\n]", raw) if k.strip()]
+
+
+def load_api_keys() -> list:
+    """Load all Tavily API keys.
+
+    Priority:
+      1. TAVILY_API_KEY environment variable
+      2. ~/.env  (standard KEY=VALUE, e.g. TAVILY_API_KEY=key1,key2)
+      3. ~/.tavily_api_key  (legacy single-key file)
+
+    Values may be comma- or newline-separated; all non-empty entries are returned.
+    """
+    # 1. Environment variable
+    env_val = os.environ.get("TAVILY_API_KEY", "").strip()
+    if env_val:
+        keys = _split_keys(env_val)
+        if keys:
+            return keys
+
+    # 2. ~/.env  (parse the first TAVILY_API_KEY= line found)
+    if DOTENV_FILE.exists():
+        for line in DOTENV_FILE.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("TAVILY_API_KEY="):
+                val = stripped[len("TAVILY_API_KEY="):]
+                keys = _split_keys(val)
+                if keys:
+                    return keys
+
+    # 3. ~/.tavily_api_key  (legacy)
     if TAVILY_KEY_FILE.exists():
         raw = TAVILY_KEY_FILE.read_text(encoding="utf-8").strip()
         if raw:
-            return raw
-    return None
+            keys = _split_keys(raw)
+            if keys:
+                return keys
+
+    return []
+
+
+def load_api_key() -> Optional[str]:
+    """Return a randomly selected API key from all available keys."""
+    keys = load_api_keys()
+    if not keys:
+        return None
+    return random.choice(keys)
 
 
 def save_api_key(key: str) -> None:
@@ -343,28 +385,43 @@ def cmd_config(args: argparse.Namespace) -> int:
         print("✅ API key saved to {}".format(TAVILY_KEY_FILE))
         return 0
 
-    api_key = load_api_key()
-    if api_key:
-        print("TAVILY_API_KEY is configured: {}".format(mask_key(api_key)))
-        source = (
-            "environment variable"
-            if os.environ.get("TAVILY_API_KEY", "").strip()
-            else "file ({})".format(TAVILY_KEY_FILE)
-        )
+    keys = load_api_keys()
+    if keys:
+        # Determine source
+        if os.environ.get("TAVILY_API_KEY", "").strip():
+            source = "environment variable (TAVILY_API_KEY)"
+        elif DOTENV_FILE.exists():
+            # Check if .env actually provided the keys
+            for line in DOTENV_FILE.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("TAVILY_API_KEY="):
+                    source = "~/.env"
+                    break
+            else:
+                source = "file ({})".format(TAVILY_KEY_FILE)
+        else:
+            source = "file ({})".format(TAVILY_KEY_FILE)
+
+        print("TAVILY_API_KEY is configured: {} key(s) found".format(len(keys)))
         print("  Source: {}".format(source))
+        for i, k in enumerate(keys, 1):
+            print("  [{}] {}".format(i, mask_key(k)))
     else:
         print(
             "TAVILY_API_KEY is not configured.\n"
             "\n"
             "To configure your Tavily API key:\n"
             "  1. Get your API key from https://app.tavily.com/home\n"
-            "  2. Run:\n"
+            "  2. Choose one of the following options:\n"
+            "\n"
+            "  Option A — Save to ~/.tavily_api_key (single key):\n"
             "     python scripts/search.py config --set-api-key YOUR_KEY\n"
             "\n"
-            "  The key will be saved to {} and loaded automatically.\n"
+            "  Option B — Add to ~/.env (supports multiple keys):\n"
+            "     TAVILY_API_KEY=key1,key2,key3\n"
+            "     (comma- or newline-separated; one key is chosen randomly per search)\n"
             "\n"
-            "Alternatively, set the environment variable:\n"
-            "  export TAVILY_API_KEY=\"YOUR_KEY\"".format(TAVILY_KEY_FILE)
+            "  Option C — Set environment variable:\n"
+            "     export TAVILY_API_KEY=\"key1,key2\""
         )
     return 0
 
