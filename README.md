@@ -12,6 +12,7 @@
 | [deep-reader](#deep-reader) | 网页文章深度抓取 + 认知增强分析报告 |
 | [daily-news](#daily-news) | 每日中文新闻简报生成 |
 | [geek-news](#geek-news) | 极客科技新闻简报生成 |
+| [better-prompt](#better-prompt) | 双专家流水线：从粗糙想法到生产级 AI 提示词 |
 | [mean-assistant](#mean-assistant) | 技术型毒舌助手，精准答案 + 专业讽刺 |
 
 ---
@@ -249,6 +250,61 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 从 [geek.keyi.ma](https://geek.keyi.ma) 获取 AI 整理的极客科技新闻，生成纯文本简报。数据来源于 Tavily 搜索引擎以及 Hacker News，由 AI 生成标题、摘要和标签。
 
 **触发词：** 极客日报、geek news、科技简报、HN news summary
+
+---
+
+## better-prompt
+
+> 双专家流水线式提示词优化：**Lyra**（Prompt Architect）负责从粗糙想法构建结构化初稿，**Meta**（Meta-Prompt Engineer）负责深度精炼，最终产出生产级 AI 提示词。
+
+### 三种使用模式
+
+| 命令 | 模式 | 适用场景 |
+|------|------|---------|
+| `/better-prompt <input>` | 完整流水线（Lyra → 确认 → Meta） | 从零开始，或想法还比较模糊 |
+| `/better-prompt lyra: <input>` | 仅 Lyra | 快速构建结构化初稿 |
+| `/better-prompt meta: <input>` | 仅 Meta | 已有 prompt，只需深度精炼 |
+
+### 工作流程
+
+```
+用户输入（想法 / 现有 prompt）
+    ↓
+[Lyra] 分析复杂度 → 选择模式（TURBO / ARCHITECT）→ 构建结构化初稿
+    ↓
+用户确认（检查点：可调整方向后再继续）
+    ↓
+[Meta] 诊断扫描 → 应用高级框架（CoT / Tree of Thoughts / Step-Back）→ 安全加固 → 输出终稿
+```
+
+### 两位专家
+
+**Lyra — Prompt Architect**
+- 擅长将模糊想法转化为结构清晰的 prompt 初稿
+- 自动评估复杂度：简单任务秒出（TURBO），复杂任务先提几个关键问题再构建（ARCHITECT）
+- 产出：优化后的 prompt + 设计决策说明
+
+**Meta — Meta-Prompt Engineer**
+- 资深精炼专家，不从零构建，专注于把现有 prompt 打磨到专业水准
+- 工具箱：认知框架注入（CoT、自洽性验证、思维树）、安全防护加固（注入防御、幻觉缓解）、结构优化
+- 产出：精炼后的终稿 + 关键改进清单 + 已知局限说明
+
+### 核心护栏
+
+- **只优化 prompt，绝不执行它** — 给一个"写诗"的 prompt 进来，改进这条指令而不是去写诗
+- **绝不编造上下文** — 缺信息就问用户，不凭空捏造品牌名、受众、场景等细节
+- **自动匹配用户语言** — 中文输入得到中文输出
+
+### 智能边界处理
+
+| 场景 | 自动行为 |
+|------|---------|
+| "优化这个提示词" + 粘贴现有 prompt | 直接走 Meta 精炼 |
+| "帮我写一个提示词" | 走完整流水线 |
+| 输入极短（1-2 个词） | 先追问一个澄清问题 |
+| 用户粘贴超长现有 prompt | 默认 Meta Only |
+
+**触发词：** 优化提示词、写系统提示词、prompt engineering、改进 prompt、`/better-prompt`
 
 ---
 
