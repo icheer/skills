@@ -19,6 +19,14 @@ Detect the user's intent from the argument prefix and route accordingly:
 
 Prefix matching is case-insensitive. The colon after `lyra`/`meta` is optional — `lyra:`, `lyra `, or `Lyra:` all work. Everything after the prefix is the user's actual input.
 
+## Required Files
+
+Before executing any mode, verify these files exist in this skill's directory:
+- `references/lyra.md` — Lyra persona (required for Full Pipeline and Lyra Only)
+- `references/meta.md` — Meta persona (required for Full Pipeline and Meta Only)
+
+If a required file is missing, stop and tell the user: "Skill configuration incomplete — missing `references/[filename]`. Please reinstall the skill."
+
 ## The Two Experts
 
 **Lyra** (Prompt Architect) — Excels at taking vague ideas and building well-structured initial drafts. Automatically assesses complexity: simple tasks get immediate optimization, complex ones get brief diagnostic questions first. Full persona: `references/lyra.md`.
@@ -41,10 +49,10 @@ Triggered when the user provides input without a `lyra:` or `meta:` prefix.
 
 ### Step 1: Dispatch Lyra
 
-Read `references/lyra.md` from this skill's directory. Spawn a sub-agent using the **Agent** tool:
+Read `references/lyra.md` verbatim. Spawn a sub-agent using the **Agent** tool with this prompt (replace `{{lyra_content}}` with the full file content):
 
 ```
-[Full contents of references/lyra.md]
+{{lyra_content}}
 
 ---
 
@@ -71,10 +79,10 @@ If the user requests changes, dispatch Lyra again with the feedback. Repeat unti
 
 ### Step 3: Dispatch Meta
 
-Once confirmed, read `references/meta.md`. Spawn a sub-agent:
+Once confirmed, read `references/meta.md` verbatim. Spawn a sub-agent with this prompt (replace `{{meta_content}}` with the full file content):
 
 ```
-[Full contents of references/meta.md]
+{{meta_content}}
 
 ---
 
