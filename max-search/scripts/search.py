@@ -27,6 +27,17 @@ from pathlib import Path
 from typing import Optional
 
 # ---------------------------------------------------------------------------
+# Windows UTF-8 encoding fix
+# ---------------------------------------------------------------------------
+if sys.platform == 'win32':
+    import io
+    # Force UTF-8 output to handle emoji and Unicode characters on Windows
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+# ---------------------------------------------------------------------------
 # Async / Sync adapter: prefer aiohttp, fall back to urllib + ThreadPool
 # ---------------------------------------------------------------------------
 try:
@@ -146,13 +157,13 @@ def mask_key(key: str) -> str:
 # ---------------------------------------------------------------------------
 # Tavily search — async version
 # ---------------------------------------------------------------------------
-async def _search_async(
+async def _search_async_once(
     session: "aiohttp.ClientSession",
     query: str,
     num_results: int,
     api_key: str,
 ) -> Optional[dict]:
-    """Send a single Tavily search request."""
+    """Send a single Tavily search request (no retry)."""
     payload = {
         "query": query,
         "max_results": num_results,
@@ -164,29 +175,56 @@ async def _search_async(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
-    try:
-        async with session.post(
-            TAVILY_URL,
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=30),
-        ) as resp:
-            if resp.status != 200:
-                body = await resp.text()
+    async with session.post(
+        TAVILY_URL,
+        json=payload,
+        headers=headers,
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as resp:
+        if resp.status != 200:
+            body = await resp.text()
+            raise Exception(f"HTTP {resp.status}: {body}")
+        data = await resp.json()
+        data["_query"] = query
+        return data
+
+
+async def _search_async(
+    session: "aiohttp.ClientSession",
+    query: str,
+    num_results: int,
+    api_key: str,
+    max_retries: int = 3,
+) -> Optional[dict]:
+    """Send a Tavily search request with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            return await _search_async_once(session, query, num_results, api_key)
+        except asyncio.TimeoutError:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
                 print(
-                    f'[WARN] Tavily returned HTTP {resp.status} for "{query}": {body}',
+                    f'[WARN] Timeout for "{query}" (attempt {attempt + 1}/{max_retries}), '
+                    f'retrying in {wait_time}s...',
                     file=sys.stderr,
                 )
+                await asyncio.sleep(wait_time)
+            else:
+                print(f'[ERROR] Timeout for "{query}" after {max_retries} attempts', file=sys.stderr)
                 return None
-            data = await resp.json()
-            data["_query"] = query
-            return data
-    except asyncio.TimeoutError:
-        print(f'[WARN] Timeout for query "{query}"', file=sys.stderr)
-        return None
-    except Exception as exc:
-        print(f'[ERROR] Exception for query "{query}": {exc}', file=sys.stderr)
-        return None
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(
+                    f'[WARN] Error for "{query}": {exc} (attempt {attempt + 1}/{max_retries}), '
+                    f'retrying in {wait_time}s...',
+                    file=sys.stderr,
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                print(f'[ERROR] Failed for "{query}" after {max_retries} attempts: {exc}', file=sys.stderr)
+                return None
+    return None
 
 
 async def run_searches_async(
@@ -204,9 +242,11 @@ async def run_searches_async(
 # Tavily search — sync fallback
 # ---------------------------------------------------------------------------
 def _search_sync(
-    query: str, num_results: int, api_key: str
+    query: str, num_results: int, api_key: str, max_retries: int = 3
 ) -> Optional[dict]:
-    """Fallback: blocking search via urllib."""
+    """Fallback: blocking search via urllib with retry logic."""
+    import time
+
     payload = json.dumps(
         {
             "query": query,
@@ -220,25 +260,47 @@ def _search_sync(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
-    req = urllib.request.Request(
-        TAVILY_URL, data=payload, headers=headers, method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            data["_query"] = query
-            return data
-    except urllib.error.HTTPError as exc:
-        print(
-            f'[WARN] Tavily returned HTTP {exc.code} for "{query}"',
-            file=sys.stderr,
+
+    for attempt in range(max_retries):
+        req = urllib.request.Request(
+            TAVILY_URL, data=payload, headers=headers, method="POST"
         )
-        return None
-    except Exception as exc:
-        print(
-            f'[ERROR] Exception for query "{query}": {exc}', file=sys.stderr
-        )
-        return None
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                data["_query"] = query
+                return data
+        except urllib.error.HTTPError as exc:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(
+                    f'[WARN] HTTP {exc.code} for "{query}" (attempt {attempt + 1}/{max_retries}), '
+                    f'retrying in {wait_time}s...',
+                    file=sys.stderr,
+                )
+                time.sleep(wait_time)
+            else:
+                print(
+                    f'[ERROR] HTTP {exc.code} for "{query}" after {max_retries} attempts',
+                    file=sys.stderr,
+                )
+                return None
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(
+                    f'[WARN] Error for "{query}": {exc} (attempt {attempt + 1}/{max_retries}), '
+                    f'retrying in {wait_time}s...',
+                    file=sys.stderr,
+                )
+                time.sleep(wait_time)
+            else:
+                print(
+                    f'[ERROR] Failed for "{query}" after {max_retries} attempts: {exc}',
+                    file=sys.stderr,
+                )
+                return None
+    return None
 
 
 def run_searches_sync(
@@ -431,17 +493,46 @@ def cmd_config(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 def cmd_search(args: argparse.Namespace) -> int:
     """Handle the 'search' subcommand."""
-    # --- Parse search config ---
-    try:
-        search_config = json.loads(args.search_json)
-    except json.JSONDecodeError as exc:
+    # --- Parse search config (support two modes) ---
+
+    # Check which mode is being used
+    has_json = args.search_json is not None
+    has_queries = args.queries is not None
+
+    if has_json and has_queries:
         print(
-            f"[FATAL] Invalid JSON in --search-json: {exc}", file=sys.stderr
+            "[FATAL] Cannot use both --search-json and --queries. Choose one mode:\n"
+            "  Advanced mode: --search-json '{\"search_queries\": [...], \"num_results\": N}'\n"
+            "  Simple mode:   --queries 'query1' 'query2' --num-results N",
+            file=sys.stderr,
         )
         return 1
 
-    queries = search_config.get("search_queries", [])
-    num_results = search_config.get("num_results", 5)
+    if not has_json and not has_queries:
+        print(
+            "[FATAL] Must specify search queries using one of:\n"
+            "  --search-json '{\"search_queries\": [...], \"num_results\": N}'\n"
+            "  --queries 'query1' 'query2' [--num-results N]",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Parse based on mode
+    if has_json:
+        # Advanced mode: JSON format
+        try:
+            search_config = json.loads(args.search_json)
+        except json.JSONDecodeError as exc:
+            print(
+                f"[FATAL] Invalid JSON in --search-json: {exc}", file=sys.stderr
+            )
+            return 1
+        queries = search_config.get("search_queries", [])
+        num_results = search_config.get("num_results", 5)
+    else:
+        # Simple mode: direct query specification
+        queries = args.queries
+        num_results = args.num_results
 
     # --- No-search shortcut ---
     if not queries:
@@ -533,10 +624,26 @@ def main():
         required=True,
         help="The user's original question (plain text)",
     )
+
+    # Advanced mode: JSON format (original interface)
     search_parser.add_argument(
         "--search-json",
-        required=True,
+        default=None,
         help='JSON string: {"search_queries": [...], "num_results": N}',
+    )
+
+    # Simplified mode: direct query specification
+    search_parser.add_argument(
+        "--queries",
+        nargs="+",
+        default=None,
+        help="Search queries (space-separated). Example: --queries 'query1' 'query2' 'query3'",
+    )
+    search_parser.add_argument(
+        "--num-results",
+        type=int,
+        default=8,
+        help="Number of results per query (default: 8)",
     )
 
     # --- config subcommand ---

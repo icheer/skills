@@ -7,7 +7,7 @@ description: >
 
   **Slash command**: `/max-search <question>`
 
-  Activate on: /max-search, "深度搜索", "max search", "全面搜索", "帮我搜一下",
+  Activate on: /max-search, "深度搜索", "max search", "全面搜索", "最大化搜索",
   "做个调研", "帮我调查一下", "最新动态是什么", "最近有什么进展",
   "对比一下", "分析一下", "做个对比分析", or any question that is factual,
   multi-faceted, or benefits from multiple orthogonal search queries.
@@ -303,3 +303,168 @@ python {{INSkillDir}}/scripts/search.py search \
 3. **禁止过度搜索**：简单事实查询不需要 5 个维度的关键词，控制在 1-2 个
 4. **脚本路径**：始终使用 `{{INSkillDir}}/scripts/search.py`，不要使用相对路径
 5. **stderr vs stdout**：脚本的 stderr 包含执行日志（可忽略），stdout 才是搜索结果
+
+---
+
+## 简化 CLI 接口
+
+除了标准的 `--search-json` 格式，脚本支持更直观的参数格式：
+
+### 标准模式（JSON 格式）
+
+```bash
+python {{INSkillDir}}/scripts/search.py search \
+  --question "用户问题" \
+  --search-json '{"search_queries": ["query1", "query2"], "num_results": 8}'
+```
+
+### 简化模式（直接指定查询）
+
+```bash
+python {{INSkillDir}}/scripts/search.py search \
+  --question "用户问题" \
+  --queries "query1" "query2" "query3" \
+  --num-results 8
+```
+
+**说明**：
+- `--queries` 和 `--search-json` 互斥，只能使用其中一个
+- `--num-results` 默认值为 8
+- 简化模式适合手动测试和快速调用
+
+### 示例对比
+
+**标准模式**：
+```bash
+python scripts/search.py search \
+  --question "WordPress 迁移插件对比" \
+  --search-json '{"search_queries": ["WordPress Duplicator review", "WP Migrate Guru features"], "num_results": 8}'
+```
+
+**简化模式**：
+```bash
+python scripts/search.py search \
+  --question "WordPress 迁移插件对比" \
+  --queries "WordPress Duplicator review" "WP Migrate Guru features" \
+  --num-results 8
+```
+
+---
+
+## 常见问题（FAQ）
+
+### Q1: 为什么在 Windows 上出现编码错误？
+
+**问题**：运行脚本时出现 `UnicodeEncodeError: 'gbk' codec can't encode character` 错误。
+
+**解决方案**：此问题已在最新版本中修复。脚本会自动检测 Windows 平台并强制使用 UTF-8 编码。如果仍然遇到问题，可以手动设置环境变量：
+
+```bash
+set PYTHONIOENCODING=utf-8
+python scripts/search.py search --question "..." --queries "..."
+```
+
+### Q2: 如何使用多个 API Key？
+
+**解决方案**：在 `~/.env` 文件中使用逗号或换行分隔多个 key：
+
+```
+TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
+```
+
+脚本会在每次搜索时随机选择一个 key，实现负载均衡。
+
+### Q3: 搜索失败怎么办？
+
+**可能原因**：
+1. API key 未配置或已过期
+2. 网络连接问题
+3. API 配额用尽
+
+**排查步骤**：
+1. 检查 API key 配置：`python scripts/search.py config`
+2. 测试网络连接：`curl https://api.tavily.com`
+3. 查看 Tavily 控制台的配额使用情况
+
+### Q4: 简化模式和标准模式有什么区别？
+
+**简化模式**（`--queries`）：
+- 适合手动测试和快速调用
+- 参数更直观，无需构造 JSON
+
+**标准模式**（`--search-json`）：
+- 适合程序化调用
+- 支持更复杂的配置（未来可能扩展更多参数）
+
+两种模式功能完全相同，选择你喜欢的即可。
+
+### Q5: 每次搜索最多可以有多少个查询？
+
+**限制**：`search_queries.length × num_results ≤ 40`
+
+**示例**：
+- 4 个查询 × 10 结果 = 40 条（最大）
+- 5 个查询 × 8 结果 = 40 条（最大）
+- 8 个查询 × 5 结果 = 40 条（最大）
+
+超过此限制会导致 context 过载，影响综合分析质量。
+
+
+---
+
+## 故障排除指南
+
+### 问题 1：脚本无法找到或导入失败
+
+**症状**：`ModuleNotFoundError` 或 `No such file or directory`
+
+**解决方案**：
+1. 确认当前工作目录
+2. 使用完整路径：`python ~/.claude/skills/max-search/scripts/search.py`
+3. 在技能中使用：`{{INSkillDir}}/scripts/search.py`
+
+### 问题 2：API Key 配置后仍然提示未找到
+
+**症状**：`[FATAL] Tavily API key is not configured`
+
+**排查步骤**：
+1. 检查配置文件权限：`ls -la ~/.tavily_api_key`
+2. 验证文件内容：`cat ~/.tavily_api_key`（确保没有多余空格或换行）
+3. 尝试使用环境变量：`export TAVILY_API_KEY="your-key"`
+4. 重新配置：`python scripts/search.py config --set-api-key YOUR_KEY`
+
+### 问题 3：搜索速度很慢
+
+**可能原因**：
+1. 网络延迟
+2. 查询数量过多
+3. 未安装 `aiohttp`（使用同步 fallback）
+
+**优化方案**：
+1. 安装异步库：`pip install aiohttp`
+2. 减少查询数量（控制在 3-5 个）
+3. 降低 `num_results`（推荐 5-8）
+
+### 问题 4：部分搜索失败
+
+**症状**：`[INFO] 3/4 searches succeeded`
+
+**处理方式**：
+- 这是正常现象，脚本会继续使用成功的结果
+- 如果失败率过高（>50%），检查：
+  1. API key 是否有效
+  2. 网络连接是否稳定
+  3. Tavily 服务状态
+
+### 问题 5：输出结果为空或不完整
+
+**可能原因**：
+1. 查询关键词过于宽泛或不准确
+2. 搜索结果被域名黑名单过滤
+3. Tavily 返回的结果质量较低
+
+**解决方案**：
+1. 优化查询关键词，添加具体限定词
+2. 增加查询的多样性（不同角度）
+3. 提高 `num_results` 参数
+
