@@ -170,7 +170,7 @@ python {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_TAVILY_API_KEY
 
 ### 输出格式要求
 
-**结论先行**：第一句话就是核心结论，不是搜索概况。
+**结论先行**：开头先简述搜索执行情况（查询次数、结果数量）并给出核心结论。
 
 格式根据内容决定，不强制套模板。基本原则：
 
