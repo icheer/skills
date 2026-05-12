@@ -1,6 +1,6 @@
-# AI Skills 集合
+# AI Skills 合集
 
-一组为 Claude Code / OpenClaw 设计的 AI 技能，覆盖产品开发全流程、网络搜索增强、新闻简报生成及语音类工具。
+一组为 Claude Code / OpenClaw 设计的自制 AI 技能合集，覆盖产品开发全流程、网络搜索增强、新闻简报生成及语音类工具。
 
 ## 快速导航
 
