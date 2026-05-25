@@ -1,12 +1,64 @@
 #!/usr/bin/env python3
 import json
 import sys
-import difflib
 from datetime import datetime
 
-def is_similar(title1, title2, threshold=0.6):
-    """检查两个标题是否相似，用于去重"""
-    return difflib.SequenceMatcher(None, title1, title2).ratio() > threshold
+def get_ngrams(text, n=3):
+    """提取 n-gram 片段"""
+    return [text[i:i+n] for i in range(len(text) - n + 1)]
+
+def extract_key_phrases(text):
+    """提取 4-5 字的关键短语"""
+    phrases = []
+    for n in [4, 5]:
+        phrases.extend(get_ngrams(text, n))
+    return phrases
+
+def jaccard_similarity(list1, list2):
+    """计算 Jaccard 相似度"""
+    set1, set2 = set(list1), set(list2)
+    if not set1 or not set2:
+        return 0
+    intersection = set1 & set2
+    union = set1 | set2
+    return len(intersection) / len(union) if union else 0
+
+def is_similar(title1, title2):
+    """
+    三层判断新闻标题相似度
+    第1层：前缀强匹配（前12字，2-gram，阈值0.7）
+    第2层：关键短语匹配（4-5字片段，阈值0.3）
+    第3层：全文 3-gram 匹配（阈值0.45）
+    """
+    if not title1 or not title2:
+        return False
+    if title1 == title2:
+        return True
+
+    # 第1层：前缀强匹配
+    prefix_len = min(12, len(title1), len(title2))
+    if prefix_len >= 8:
+        prefix1 = title1[:prefix_len]
+        prefix2 = title2[:prefix_len]
+        prefix_grams1 = get_ngrams(prefix1, 2)
+        prefix_grams2 = get_ngrams(prefix2, 2)
+        prefix_sim = jaccard_similarity(prefix_grams1, prefix_grams2)
+        if prefix_sim > 0.7:
+            return True
+
+    # 第2层：关键短语匹配
+    phrases1 = extract_key_phrases(title1)
+    phrases2 = extract_key_phrases(title2)
+    phrase_sim = jaccard_similarity(phrases1, phrases2)
+    if phrase_sim > 0.3:
+        return True
+
+    # 第3层：全文 3-gram 匹配
+    grams1 = get_ngrams(title1, 3)
+    grams2 = get_ngrams(title2, 3)
+    similarity = jaccard_similarity(grams1, grams2)
+
+    return similarity > 0.45
 
 def editorial_pick(news_list, target=12):
     """
