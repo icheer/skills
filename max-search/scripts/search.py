@@ -111,7 +111,19 @@ def load_api_keys() -> list:
         if keys:
             return keys
 
-    # 2. ~/.env  (parse the first TAVILY_API_KEY= line found)
+    # 2. /proc/1/environ fallback (Docker: nanobot sandbox strips env vars)
+    try:
+        with open("/proc/1/environ", "rb") as f:
+            for entry in f.read().split(b"\0"):
+                if entry.startswith(b"TAVILY_API_KEY="):
+                    val = entry.split(b"=", 1)[1].decode().strip()
+                    keys = _split_keys(val)
+                    if keys:
+                        return keys
+    except (FileNotFoundError, PermissionError):
+        pass
+
+    # 3. ~/.env  (parse the first TAVILY_API_KEY= line found)
     if DOTENV_FILE.exists():
         for line in DOTENV_FILE.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
