@@ -121,10 +121,24 @@ Step 3 — 综合回答
 
 ## Step 2 — 调用搜索脚本
 
+### Python 命令检测
+
+调用脚本前，先确定当前系统可用的 Python 命令：
+
+```bash
+python --version 2>/dev/null || python3 --version 2>/dev/null
+```
+
+- 若 `python` 可用，使用 `python`
+- 若只有 `python3` 可用，使用 `python3`
+- 若两者都不可用，告知用户需要安装 Python
+
+以下示例统一用 `<python>` 表示实际可用的命令。
+
 ### 脚本路径与调用方式
 
 ```bash
-python {{INSkillDir}}/scripts/search.py search \
+<python> {{INSkillDir}}/scripts/search.py search \
   --question "<用户原始问题>" \
   --search-json '{
     "search_queries": ["<query1>", "<query2>", ...],
@@ -138,10 +152,10 @@ python {{INSkillDir}}/scripts/search.py search \
 
 ```bash
 # 查看配置状态（含已加载的 key 数量）
-python {{INSkillDir}}/scripts/search.py config
+<python> {{INSkillDir}}/scripts/search.py config
 
 # 设置单个 API Key（保存到 ~/.tavily_api_key）
-python {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_TAVILY_API_KEY
+<python> {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_TAVILY_API_KEY
 ```
 
 支持多 Key 轮询（每次搜索随机选一个）：
@@ -247,7 +261,7 @@ Get your key at: https://app.tavily.com/home
 **Step 2 调用脚本**：
 
 ```bash
-python {{INSkillDir}}/scripts/search.py search \
+<python> {{INSkillDir}}/scripts/search.py search \
   --question "DeepSeek 最近有什么进展？" \
   --search-json '{"search_queries":["DeepSeek AI 2026 news","DeepSeek latest model release","DeepSeek R1 update"],"num_results":8}'
 ```
@@ -313,7 +327,7 @@ python {{INSkillDir}}/scripts/search.py search \
 ### 标准模式（JSON 格式）
 
 ```bash
-python {{INSkillDir}}/scripts/search.py search \
+<python> {{INSkillDir}}/scripts/search.py search \
   --question "用户问题" \
   --search-json '{"search_queries": ["query1", "query2"], "num_results": 8}'
 ```
@@ -321,7 +335,7 @@ python {{INSkillDir}}/scripts/search.py search \
 ### 简化模式（直接指定查询）
 
 ```bash
-python {{INSkillDir}}/scripts/search.py search \
+<python> {{INSkillDir}}/scripts/search.py search \
   --question "用户问题" \
   --queries "query1" "query2" "query3" \
   --num-results 8
@@ -336,14 +350,14 @@ python {{INSkillDir}}/scripts/search.py search \
 
 **标准模式**：
 ```bash
-python scripts/search.py search \
+<python> scripts/search.py search \
   --question "WordPress 迁移插件对比" \
   --search-json '{"search_queries": ["WordPress Duplicator review", "WP Migrate Guru features"], "num_results": 8}'
 ```
 
 **简化模式**：
 ```bash
-python scripts/search.py search \
+<python> scripts/search.py search \
   --question "WordPress 迁移插件对比" \
   --queries "WordPress Duplicator review" "WP Migrate Guru features" \
   --num-results 8
@@ -361,7 +375,7 @@ python scripts/search.py search \
 
 ```bash
 set PYTHONIOENCODING=utf-8
-python scripts/search.py search --question "..." --queries "..."
+<python> scripts/search.py search --question "..." --queries "..."
 ```
 
 ### Q2: 如何使用多个 API Key？
@@ -382,7 +396,7 @@ TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
 3. API 配额用尽
 
 **排查步骤**：
-1. 检查 API key 配置：`python scripts/search.py config`
+1. 检查 API key 配置：`<python> scripts/search.py config`
 2. 测试网络连接：`curl https://api.tavily.com`
 3. 查看 Tavily 控制台的配额使用情况
 
@@ -420,7 +434,7 @@ TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
 
 **解决方案**：
 1. 确认当前工作目录
-2. 使用完整路径：`python ~/.claude/skills/max-search/scripts/search.py`
+2. 使用完整路径：`<python> ~/.claude/skills/max-search/scripts/search.py`
 3. 在技能中使用：`{{INSkillDir}}/scripts/search.py`
 
 ### 问题 2：API Key 配置后仍然提示未找到
@@ -431,7 +445,7 @@ TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
 1. 检查配置文件权限：`ls -la ~/.tavily_api_key`
 2. 验证文件内容：`cat ~/.tavily_api_key`（确保没有多余空格或换行）
 3. 尝试使用环境变量：`export TAVILY_API_KEY="your-key"`
-4. 重新配置：`python scripts/search.py config --set-api-key YOUR_KEY`
+4. 重新配置：`<python> scripts/search.py config --set-api-key YOUR_KEY`
 
 ### 问题 3：搜索速度很慢
 
