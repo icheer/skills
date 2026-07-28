@@ -38,7 +38,7 @@ Step 1 — 关键词拆解（内部执行）
     │
     ▼
 Step 2 — 执行搜索
-    └─ 调用 {{INSkillDir}}/scripts/search.py search --question "..." --search-json '...'（路径相对于 skill bundle 根目录）
+    └─ 调用 bash {{INSkillDir}}/scripts/search.sh [--num-results N] "query1" "query2" ...（路径相对于 skill bundle 根目录）
     │
     ▼
 Step 3 — 综合回答
@@ -121,53 +121,33 @@ Step 3 — 综合回答
 
 ## Step 2 — 调用搜索脚本
 
-### Python 命令检测
-
-调用脚本前，先确定当前系统可用的 Python 命令：
-
-```bash
-python --version 2>/dev/null || python3 --version 2>/dev/null
-```
-
-- 若 `python` 可用，使用 `python`
-- 若只有 `python3` 可用，使用 `python3`
-- 若两者都不可用，告知用户需要安装 Python
-
-以下示例统一用 `<python>` 表示实际可用的命令。
+脚本用 **bash + curl** 实现（无需 Python）。调用前需确保系统有 `bash` 和 `curl`（Windows 用 Git Bash 运行）。
 
 ### 脚本路径与调用方式
 
 ```bash
-<python> {{INSkillDir}}/scripts/search.py search \
-  --question "<用户原始问题>" \
-  --search-json '{
-    "search_queries": ["<query1>", "<query2>", ...],
-    "num_results": <N>
-  }'
+bash {{INSkillDir}}/scripts/search.sh [--num-results N] "<query1>" "<query2>" ...
 ```
 
-> **注意**：`--search-json` 中的 `search_queries` 是**字符串数组**。
+- 搜索关键词以**位置参数**传入，每个用引号包裹
+- `--num-results` 可选，默认 `8`
+- 脚本会**并行**请求所有查询，stdout 输出每个查询的原始 JSON（以 `===== QUERY: ... =====` 分隔），stderr 输出执行日志
 
 ### API Key 配置（首次使用）
 
 ```bash
-# 查看配置状态（含已加载的 key 数量）
-<python> {{INSkillDir}}/scripts/search.py config
-
-# 设置单个 API Key（保存到 ~/.tavily_api_key）
-<python> {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_TAVILY_API_KEY
+# 查看配置状态（含已加载的 key 数量，打码显示）
+bash {{INSkillDir}}/scripts/search.sh --check
 ```
 
-支持多 Key 轮询（每次搜索随机选一个）：
+支持多 Key（每次搜索随机选一个），加载优先级：环境变量 → `~/.env` → `~/.tavily_api_key`
 
 - **推荐：`~/.env`**（标准 KEY=VALUE 格式，逗号或换行分隔）
   ```
   TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
   ```
 - **环境变量**：`export TAVILY_API_KEY="tvly-key1,tvly-key2"`
-- **`~/.tavily_api_key`**（旧格式，向后兼容）
-
-加载优先级：环境变量 → `~/.env` → `~/.tavily_api_key`
+- **`~/.tavily_api_key`**（单 Key 文件，向后兼容）
 
 获取 Key：<https://app.tavily.com/home>
 
@@ -213,19 +193,19 @@ python --version 2>/dev/null || python3 --version 2>/dev/null
 
 **脚本输出**：
 ```
-[FATAL] Tavily API key is not configured.
-Option A — Save permanently (recommended):
-  python {{INSkillDir}}/scripts/search.py config --set-api-key YOUR_KEY
-Option B — Set environment variable:
-  export TAVILY_API_KEY="YOUR_KEY"
-Get your key at: https://app.tavily.com/home
+[FATAL] 未配置 Tavily API Key。
+配置方式（任选其一）:
+  A. ~/.env: TAVILY_API_KEY=key1,key2,key3
+  B. export TAVILY_API_KEY="YOUR_KEY"
+  C. ~/.tavily_api_key（单 Key）
+获取 Key: https://app.tavily.com/home
 ```
 
 **处理**：向用户说明配置步骤，等用户完成后再执行。
 
 ### 情况 3：部分搜索失败
 
-**脚本输出**：`[INFO] N/M searches succeeded.`
+**脚本输出**：`[INFO] N/M 个查询成功。`（失败的查询块会标记 `[ERROR]`）
 
 **处理**：
 - 告知用户有部分查询失败，不阻塞流程
@@ -261,12 +241,11 @@ Get your key at: https://app.tavily.com/home
 **Step 2 调用脚本**：
 
 ```bash
-<python> {{INSkillDir}}/scripts/search.py search \
-  --question "DeepSeek 最近有什么进展？" \
-  --search-json '{"search_queries":["DeepSeek AI 2026 news","DeepSeek latest model release","DeepSeek R1 update"],"num_results":8}'
+bash {{INSkillDir}}/scripts/search.sh --num-results 8 \
+  "DeepSeek AI 2026 news" "DeepSeek latest model release" "DeepSeek R1 update"
 ```
 
-**Step 3 综合回答**：基于脚本输出，合成带来源的 Markdown 回答。
+**Step 3 综合回答**：基于脚本输出的 JSON 结果，合成带来源的 Markdown 回答。
 
 ---
 
@@ -315,68 +294,41 @@ Get your key at: https://app.tavily.com/home
 1. **关键词精炼**：去除"的"、"是"、"如何"等停用词，加上具体限定词
 2. **总条目数控制**：`search_queries.length × num_results ≤ 40`，避免 context 过载
 3. **禁止过度搜索**：简单事实查询不需要 5 个维度的关键词，控制在 1-2 个
-4. **脚本路径**：始终使用 `{{INSkillDir}}/scripts/search.py`，不要使用相对路径
-5. **stderr vs stdout**：脚本的 stderr 包含执行日志（可忽略），stdout 才是搜索结果
+4. **脚本路径**：始终使用 `{{INSkillDir}}/scripts/search.sh`，不要使用相对路径
+5. **stderr vs stdout**：脚本的 stderr 包含执行日志（可忽略），stdout 才是搜索结果（每个查询一段原始 JSON）
 
 ---
 
-## 简化 CLI 接口
+## CLI 接口
 
-除了标准的 `--search-json` 格式，脚本支持更直观的参数格式：
-
-### 标准模式（JSON 格式）
+脚本采用位置参数传入查询，简单直接：
 
 ```bash
-<python> {{INSkillDir}}/scripts/search.py search \
-  --question "用户问题" \
-  --search-json '{"search_queries": ["query1", "query2"], "num_results": 8}'
+bash {{INSkillDir}}/scripts/search.sh [--num-results N] "query1" "query2" "query3"
 ```
 
-### 简化模式（直接指定查询）
+**参数**：
+- 位置参数：一个或多个搜索关键词，每个用引号包裹
+- `--num-results N`：可选，每个查询返回结果数，默认 8
+- `--check`：不搜索，仅检查 API Key 配置状态
 
+**示例**：
 ```bash
-<python> {{INSkillDir}}/scripts/search.py search \
-  --question "用户问题" \
-  --queries "query1" "query2" "query3" \
-  --num-results 8
-```
-
-**说明**：
-- `--queries` 和 `--search-json` 互斥，只能使用其中一个
-- `--num-results` 默认值为 8
-- 简化模式适合手动测试和快速调用
-
-### 示例对比
-
-**标准模式**：
-```bash
-<python> scripts/search.py search \
-  --question "WordPress 迁移插件对比" \
-  --search-json '{"search_queries": ["WordPress Duplicator review", "WP Migrate Guru features"], "num_results": 8}'
-```
-
-**简化模式**：
-```bash
-<python> scripts/search.py search \
-  --question "WordPress 迁移插件对比" \
-  --queries "WordPress Duplicator review" "WP Migrate Guru features" \
-  --num-results 8
+bash {{INSkillDir}}/scripts/search.sh --num-results 8 \
+  "WordPress Duplicator review" "WP Migrate Guru features"
 ```
 
 ---
 
 ## 常见问题（FAQ）
 
-### Q1: 为什么在 Windows 上出现编码错误？
+### Q1: 脚本无法运行 / 找不到 bash 或 curl？
 
-**问题**：运行脚本时出现 `UnicodeEncodeError: 'gbk' codec can't encode character` 错误。
+**问题**：提示 `bash: command not found` 或 `curl: command not found`。
 
-**解决方案**：此问题已在最新版本中修复。脚本会自动检测 Windows 平台并强制使用 UTF-8 编码。如果仍然遇到问题，可以手动设置环境变量：
-
-```bash
-set PYTHONIOENCODING=utf-8
-<python> scripts/search.py search --question "..." --queries "..."
-```
+**解决方案**：脚本需要 `bash` + `curl`。
+- Windows：使用 **Git Bash** 运行（Git for Windows 自带 bash 与 curl）
+- macOS / Linux：通常已内置，若缺 curl 用包管理器安装
 
 ### Q2: 如何使用多个 API Key？
 
@@ -396,23 +348,11 @@ TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
 3. API 配额用尽
 
 **排查步骤**：
-1. 检查 API key 配置：`<python> scripts/search.py config`
+1. 检查 API key 配置：`bash scripts/search.sh --check`
 2. 测试网络连接：`curl https://api.tavily.com`
 3. 查看 Tavily 控制台的配额使用情况
 
-### Q4: 简化模式和标准模式有什么区别？
-
-**简化模式**（`--queries`）：
-- 适合手动测试和快速调用
-- 参数更直观，无需构造 JSON
-
-**标准模式**（`--search-json`）：
-- 适合程序化调用
-- 支持更复杂的配置（未来可能扩展更多参数）
-
-两种模式功能完全相同，选择你喜欢的即可。
-
-### Q5: 每次搜索最多可以有多少个查询？
+### Q4: 每次搜索最多可以有多少个查询？
 
 **限制**：`search_queries.length × num_results ≤ 40`
 
@@ -428,40 +368,39 @@ TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
 
 ## 故障排除指南
 
-### 问题 1：脚本无法找到或导入失败
+### 问题 1：脚本无法找到或执行
 
-**症状**：`ModuleNotFoundError` 或 `No such file or directory`
+**症状**：`No such file or directory` 或 `Permission denied`
 
 **解决方案**：
-1. 确认当前工作目录
-2. 使用完整路径：`<python> ~/.claude/skills/max-search/scripts/search.py`
-3. 在技能中使用：`{{INSkillDir}}/scripts/search.py`
+1. 确认使用 `bash` 显式调用：`bash {{INSkillDir}}/scripts/search.sh ...`
+2. 使用完整路径：`bash ~/.claude/skills/max-search/scripts/search.sh ...`
+3. 确认已安装 `bash` 与 `curl`
 
 ### 问题 2：API Key 配置后仍然提示未找到
 
-**症状**：`[FATAL] Tavily API key is not configured`
+**症状**：`[FATAL] 未配置 Tavily API Key`
 
 **排查步骤**：
-1. 检查配置文件权限：`ls -la ~/.tavily_api_key`
-2. 验证文件内容：`cat ~/.tavily_api_key`（确保没有多余空格或换行）
-3. 尝试使用环境变量：`export TAVILY_API_KEY="your-key"`
-4. 重新配置：`<python> scripts/search.py config --set-api-key YOUR_KEY`
+1. 运行 `bash scripts/search.sh --check` 查看加载情况
+2. 验证 `~/.env` 中 `TAVILY_API_KEY=` 行格式正确（无多余空格）
+3. 尝试环境变量：`export TAVILY_API_KEY="your-key"`
 
 ### 问题 3：搜索速度很慢
 
 **可能原因**：
 1. 网络延迟
 2. 查询数量过多
-3. 未安装 `aiohttp`（使用同步 fallback）
+3. 单个查询 `num_results` 过大
 
 **优化方案**：
-1. 安装异步库：`pip install aiohttp`
-2. 减少查询数量（控制在 3-5 个）
-3. 降低 `num_results`（推荐 5-8）
+1. 减少查询数量（控制在 3-5 个）
+2. 降低 `num_results`（推荐 5-8）
+3. 脚本已并行请求，总耗时取决于最慢的单个查询
 
 ### 问题 4：部分搜索失败
 
-**症状**：`[INFO] 3/4 searches succeeded`
+**症状**：`[INFO] 3/4 个查询成功。`（失败查询块标记 `[ERROR]`）
 
 **处理方式**：
 - 这是正常现象，脚本会继续使用成功的结果
