@@ -121,23 +121,40 @@ Step 3 — 综合回答
 
 ## Step 2 — 调用搜索脚本
 
-脚本用 **bash + curl** 实现（无需 Python）。调用前需确保系统有 `bash` 和 `curl`（Windows 用 Git Bash 运行）。
+提供两个功能等价的脚本，根据环境二选一：
+
+| 脚本 | 依赖 | 适用 |
+|------|------|------|
+| `scripts/search.sh` | `bash` + `curl` | macOS / Linux / Windows Git Bash（**首选**） |
+| `scripts/search.ps1` | PowerShell（系统自带） | Windows **未安装 Git Bash** 时使用 |
+
+两者输入参数与输出格式一致（stdout 为每个查询一段原始 JSON，以 `===== QUERY: ... =====` 分隔；stderr 为执行日志）。
 
 ### 脚本路径与调用方式
+
+**bash + curl（首选）**：
 
 ```bash
 bash {{INSkillDir}}/scripts/search.sh [--num-results N] "<query1>" "<query2>" ...
 ```
 
+**PowerShell（Windows 无 Git Bash 时）**：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 [-NumResults N] "<query1>" "<query2>" ...
+```
+
 - 搜索关键词以**位置参数**传入，每个用引号包裹
-- `--num-results` 可选，默认 `8`
-- 脚本会**并行**请求所有查询，stdout 输出每个查询的原始 JSON（以 `===== QUERY: ... =====` 分隔），stderr 输出执行日志
+- 结果数参数：bash 用 `--num-results N`，PowerShell 用 `-NumResults N`，均默认 `8`
+- 两个脚本都会**并行**请求所有查询
 
 ### API Key 配置（首次使用）
 
 ```bash
 # 查看配置状态（含已加载的 key 数量，打码显示）
 bash {{INSkillDir}}/scripts/search.sh --check
+# Windows PowerShell:
+# powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 -Check
 ```
 
 支持多 Key（每次搜索随机选一个），加载优先级：环境变量 → `~/.env` → `~/.tavily_api_key`
@@ -303,14 +320,25 @@ bash {{INSkillDir}}/scripts/search.sh --num-results 8 \
 
 脚本采用位置参数传入查询，简单直接：
 
+**bash + curl（首选）**：
+
 ```bash
 bash {{INSkillDir}}/scripts/search.sh [--num-results N] "query1" "query2" "query3"
 ```
 
-**参数**：
 - 位置参数：一个或多个搜索关键词，每个用引号包裹
 - `--num-results N`：可选，每个查询返回结果数，默认 8
 - `--check`：不搜索，仅检查 API Key 配置状态
+
+**PowerShell（Windows 无 Git Bash 时）**：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 [-NumResults N] "query1" "query2" "query3"
+```
+
+- 位置参数：同上
+- `-NumResults N`：可选，默认 8
+- `-Check`：不搜索，仅检查 API Key 配置状态
 
 **示例**：
 ```bash
@@ -326,8 +354,12 @@ bash {{INSkillDir}}/scripts/search.sh --num-results 8 \
 
 **问题**：提示 `bash: command not found` 或 `curl: command not found`。
 
-**解决方案**：脚本需要 `bash` + `curl`。
-- Windows：使用 **Git Bash** 运行（Git for Windows 自带 bash 与 curl）
+**解决方案**：`search.sh` 需要 `bash` + `curl`。
+- Windows **已装 Git Bash**：直接用 Git Bash 运行 `search.sh`
+- Windows **未装 Git Bash**：改用系统自带的 PowerShell 版本（无需任何额外安装）：
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 -NumResults 8 "query1" "query2"
+  ```
 - macOS / Linux：通常已内置，若缺 curl 用包管理器安装
 
 ### Q2: 如何使用多个 API Key？

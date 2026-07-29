@@ -12,7 +12,9 @@ description: "Use this skill when the user wants to deeply read, analyze, or ext
 
 ### Step 1: 检测输入类型
 检查用户消息是否包含 URL：
-- **有 URL** → 立刻执行 `scripts/fetch_article.py {{url}}`，解析返回的 JSON，提取 `title`、`url`、`content`、`content_length` 字段，进入模式 A
+- **有 URL** → 立刻执行抓取脚本，解析返回的 JSON，提取 `title`、`url`、`content`、`content_length` 字段，进入模式 A
+  - **默认（有 Python）**：`scripts/fetch_article.py {{url}}` —— 质量最佳，输出 Markdown
+  - **Windows 无 Git Bash 且无 Python**：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch_article.ps1 {{url}}` —— 纯 PowerShell，零依赖，输出纯文本
 - **无 URL，但有文章内容** → 已有上下文，继续分析
 - **无 URL，也无上下文** → 进入交互问答模式
 - **魔法指令**（`/ELI5` `/Challenge` `/Action` `/Graph` `/Deep`）→ 检查是否有上下文，有则执行对应操作
@@ -96,5 +98,6 @@ description: "Use this skill when the user wants to deeply read, analyze, or ext
 ## Resources
 
 ### scripts/
-- `fetch_article.py` - Fetch article content from URL (WeChat browser headers), convert to Markdown, output JSON: `{"title", "url", "content", "content_length"}`. `content_length` = 中文字符数 + 英文词数（字词数），统计于截断前。
-- `fetch_article.sh` - Fallback (curl-based); outputs the same JSON structure but `content` is plain text (no Markdown conversion). Use when Python packages are unavailable.
+- `fetch_article.py` - Fetch article content from URL (WeChat browser headers), convert to Markdown, output JSON: `{"title", "url", "content", "content_length"}`. `content_length` = 中文字符数 + 英文词数（字词数），统计于截断前。**首选**（质量最佳）。
+- `fetch_article.sh` - Fallback (curl-based); outputs the same JSON structure but `content` is plain text (no Markdown conversion). Use when Python packages are unavailable. **仍需 Python**（curl + BeautifulSoup）。
+- `fetch_article.ps1` - Windows PowerShell 版（纯 PowerShell，**无需 bash / curl / Python / 任何第三方包**）。伪装微信浏览器抓取，输出相同 JSON 结构，`content` 为纯文本。适用于「Windows 无 Git Bash 且无 Python」环境。调用：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch_article.ps1 <url>`。
