@@ -16,6 +16,7 @@
 | [mean-assistant](#mean-assistant) | 技术型毒舌助手，精准答案 + 专业讽刺 |
 | [pain-killer](#pain-killer) | 情绪去魔化学者：通过学术命名削弱情绪压倒性力量 |
 | [life-guide](#life-guide) | 人间指南顾问：结构化生活困境分析 + 分阶段行动方案 |
+| [browser-obscura](#browser-obscura) | 轻量无头浏览器自动化：网页抓取、截图、批量采集、隐身爬取 |
 
 ---
 
@@ -419,7 +420,62 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 
 ---
 
-## 使用方式
+## browser-obscura
+
+> 基于 Rust 编写的轻量无头浏览器引擎 [Obscura](https://github.com/h4ckf0r0day/obscura)，单一二进制文件驱动，无需 Node.js，比 Headless Chrome 快 ~12 倍、内存占用少 ~6 倍。
+
+### 功能层级
+
+| 层级 | 功能 |
+|------|------|
+| **基础** | 网页内容提取（HTML / Text / Markdown / Links / Assets / Cookies）、JavaScript 执行、等待策略 |
+| **进阶** | 页面截图（PNG）、PDF 导出、批量并发抓取（`scrape`）、Cookie 持久化、代理配置 |
+| **完整** | 隐身模式（反指纹 + 追踪器拦截）、CDP 服务器（`serve`）、Puppeteer / Playwright 集成 |
+
+### 快速上手
+
+```bash
+# 安装（Linux/macOS）
+bash browser-obscura/scripts/install-obscura.sh
+
+# 安装（Windows PowerShell）
+.\browser-obscura\scripts\install-obscura.ps1
+
+# 获取网页纯文本
+obscura fetch https://example.com --dump text
+
+# 提取结构化数据
+obscura fetch https://news.ycombinator.com --eval "
+  Array.from(document.querySelectorAll('.titleline > a'))
+    .map(a => ({ title: a.textContent, url: a.href }))"
+
+# 页面截图
+obscura fetch https://example.com --screenshot page.png
+
+# 批量抓取（并发 10）
+obscura scrape url1 url2 url3 --eval "document.title" --concurrency 10
+
+# 隐身模式 + 代理
+obscura --stealth --proxy socks5://user:pass@proxy:1080 fetch https://example.com
+```
+
+### 实用工具脚本
+
+| 脚本 | 功能 |
+|------|------|
+| `scripts/archive-page.sh` | 一键完整归档网页（HTML / Markdown / 截图 / 链接 / 资源） |
+| `scripts/monitor-news.sh` | 定时批量监控多个新闻源，保存快照 |
+| `scripts/api-discovery.sh` | 从页面资源中发现 API 端点 |
+| `scripts/stealth-crawler.sh` | 隐身模式爬虫，支持代理和随机延迟 |
+| `scripts/test-suite.sh` | 完整功能验证套件 |
+
+### 注意事项
+
+- ⚠️ **截图不支持 CJK 字体**：Obscura 不内置中文/日文/韩文字体，截图中的 CJK 文字会渲染为方框。文本提取（`--dump text / markdown`）不受影响。
+- 截图 / PDF 功能需要带 `render` 特性的构建版本（官方二进制已包含）。
+- `scrape` 命令依赖 `obscura-worker`，需与主程序放在同一目录。
+
+**触发词：** `/browser-obscura`、无头浏览器、网页截图、批量抓取、网页归档、隐身爬虫
 
 ### Claude Code
 
