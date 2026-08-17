@@ -17,6 +17,7 @@
 | [pain-killer](#pain-killer) | 情绪去魔化学者：通过学术命名削弱情绪压倒性力量 |
 | [life-guide](#life-guide) | 人间指南顾问：结构化生活困境分析 + 分阶段行动方案 |
 | [browser-obscura](#browser-obscura) | 轻量无头浏览器自动化：网页抓取、截图、批量采集、隐身爬取 |
+| [edge-tts-podcast](#edge-tts-podcast) | 播客语音生成：智能搜索语料 + AI生成对话脚本 + Edge TTS逐行合成 |
 
 ---
 
@@ -476,6 +477,118 @@ obscura --stealth --proxy socks5://user:pass@proxy:1080 fetch https://example.co
 - `scrape` 命令依赖 `obscura-worker`，需与主程序放在同一目录。
 
 **触发词：** `/browser-obscura`、无头浏览器、网页截图、批量抓取、网页归档、隐身爬虫
+
+---
+
+## edge-tts-podcast
+
+> 播客语音自动生成流水线：从一个想法/URL/关键词出发，自动搜索语料 → AI 生成自然对话脚本 → 逐行调用 Edge TTS 合成音频 → 拼接成完整播客 MP3。支持断点续传和跨会话恢复。
+
+### 5 阶段工作流
+
+```
+Phase 0: 环境变量检查（TTS_BASE_URL / TTS_API_KEY / TAVILY_API_KEY）
+    ↓
+Phase 1: 引导式需求收集（主题、时长、音色、语言风格）
+    ↓  （创建工作目录 {yyyy-MM-dd}_{topic}/ ）
+Phase 2: 语料搜索与收集（Tavily 搜索 / WebFetch URL / 保存到 sources/）
+    ↓
+Phase 3: 播客文字稿生成（双人对话 CSV: done / voice_id / content / speed / pitch）
+    ↓
+Phase 4: 逐行 TTS 生成（调用 Edge TTS API，断点续传，更新 done 列）
+    ↓
+Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3）
+```
+
+### 核心特性
+
+**智能语料采集**
+- **URL 输入** — 伪装微信浏览器 UA，绕过反爬检测，提取纯文本（无 HTML 噪音）
+- **关键词搜索** — 3-4 个正交查询并行搜索（Tavily），自动抓取 Top 5 高相关度结果
+- **自动补充** — URL 内容不足时，自动生成补充搜索查询
+
+**播客脚本生成**
+- **引导式交互** — 逐步明确主题、类型（单人/双人）、时长（短/中/长）、音色方案
+- **自然对话风格** — 基于专业提示词（`prompts/podcast_script.md`）生成高质量对话
+- **CSV 格式** — Tab 分隔，包含 `done / voice_id / content / speed / pitch` 五列
+- **音色场景适配** — 根据播客主题推荐合适的音色组合（科技/生活/商业/体育等）
+
+**可靠 TTS 生成**
+- **逐行处理** — 每行生成完立即更新 `done` 列，确保断点续传
+- **跨会话恢复** — 在新会话中继续未完成任务，自动跳过已生成的行
+- **完整 POST body** — `stream: false` + `cleaning_options`（去 Markdown/Emoji/URL 等）
+- **防 Cloudflare 拦截** — 完整请求头（User-Agent / Origin / Referer）
+
+**音频拼接**
+- **纯 Python 实现** — 无需 ffmpeg，二进制 MP3 拼接 + ID3 标签处理
+- **行间静音** — 可配置 250ms / 500ms / 750ms / 1000ms 静音间隔
+
+### 音色推荐
+
+| 播客类型 | 推荐组合 | 理由 |
+| --- | --- | --- |
+| **科技/数码** | 云扬（男）+ 晓涵（女） | 专业稳重 + 知性大方 |
+| **商业/财经** | 云扬（男）+ 晓墨（女） | 双方都偏播音腔，契合商业严肃调性 |
+| **生活方式** | 云希（男）+ 晓晓（女） | 阳光活泼 + 温暖治愈 |
+| **情感/心理** | 晓晓（女）+ 云希（男） | 温暖倾听者 + 阳光陪伴者 |
+| **体育/电竞** | 云健（男）+ 晓伊（女） | 激情解说 + 元气助攻 |
+
+完整音色列表和场景适配指南见 `references/edge_tts_voices.md`。
+
+### 工作目录结构
+
+```
+{yyyy-MM-dd}_{topic}/
+├── meta.md              # 播客元信息（主题、参数、搜索策略、语料清单）
+├── lines.csv            # 播客文字稿（tab 分隔，done 列追踪进度）
+├── sources/             # 语料文件（article.md / 1.md / 2.md …）
+├── voices/              # 逐行音频（1.mp3 / 2.mp3 …）
+└── podcast.mp3          # 最终拼合产物
+```
+
+### 环境配置
+
+需提前配置三个环境变量（优先级：系统环境变量 → `~/.env`）：
+
+```bash
+TTS_BASE_URL=https://your-worker.workers.dev   # Edge TTS Cloudflare Worker 地址
+TTS_API_KEY=your_tts_api_key_here              # TTS 服务 Bearer Token
+TAVILY_API_KEY=tvly-your_key_here              # Tavily 搜索 API Key
+```
+
+配置模板见 `.env.example`。
+
+### 技术依赖
+
+| 组件 | 依赖 | 说明 |
+| --- | --- | --- |
+| `scripts/fetch_article.py` | requests + beautifulsoup4 | 自动安装 |
+| `scripts/tts.py` | 纯 Python（stdlib） | 无额外依赖 |
+| `scripts/concat.py` | 纯 Python（stdlib） | 无额外依赖 |
+| `scripts/search.sh` | bash + curl | macOS / Linux / Git Bash |
+| `scripts/search.ps1` | PowerShell（系统自带） | Windows 回退方案 |
+
+### 使用示例
+
+```
+用户: 帮我做一期关于"AI Agent 最新进展"的播客
+
+Agent:
+ → Phase 0: 检查环境变量 ✅
+ → Phase 1: 引导式提问（主题确认、时长选择、音色方案）
+ → Phase 2: Tavily 搜索 3 个正交查询 → 抓取 Top 5 结果 → 保存到 sources/
+ → Phase 3: 生成 lines.csv（40-60 行，男女对话）
+ → Phase 4: 调用 tts.py 逐行生成音频（显示进度：[3/50]）
+ → Phase 5: 调用 concat.py 拼接 → podcast.mp3
+
+✅ 播客生成完成！
+📁 工作目录: 2026-08-17_ai-agent-trends/
+🎙️ 音频文件: podcast.mp3（约 8 分钟）
+```
+
+**触发词：** `/edge-tts-podcast`、帮我生成播客、做一期播客、制作播客音频、生成播客
+
+---
 
 ### Claude Code
 
