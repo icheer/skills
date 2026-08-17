@@ -1,15 +1,51 @@
-# Edge TTS 音色列表
+# Edge TTS 音色列表与播客场景推荐
 
-| ShortName | RoleName | Locale | Language/Region | Gender | Remark |
+> 💡 **使用建议**：根据播客主题选择合适的音色组合，避免音色风格与内容严重不匹配。
+
+---
+
+## 中文普通话音色（播客核心选择）
+
+| ShortName | 角色名 | 性别 | 音色特点 | ✅ 适合播客场景 | ❌ 不适合场景 |
 | --- | --- | --- | --- | --- | --- |
-| zh-CN-XiaoxiaoNeural | 晓晓 | zh-CN | Chinese (Mandarin) | Female | 新闻/小说朗读，温暖亲和，微软zh-CN代表声音 |
-| zh-CN-XiaoyiNeural | 晓伊 | zh-CN | Chinese (Mandarin) | Female | 动画/小说配音，活泼可爱 |
-| zh-CN-YunjianNeural | 云健 | zh-CN | Chinese (Mandarin) | Male | 体育解说/小说，激情有力 |
-| zh-CN-YunxiNeural | 云希 | zh-CN | Chinese (Mandarin) | Male | 小说/客服场景，阳光活泼 |
-| zh-CN-YunxiaNeural | 云夏 | zh-CN | Chinese (Mandarin) | Male | 动画/小说配音，可爱孩子气 |
-| zh-CN-YunyangNeural | 云扬 | zh-CN | Chinese (Mandarin) | Male | 新闻播报，专业可靠 |
-| zh-CN-liaoning-XiaobeiNeural | 晓北 | zh-CN-liaoning | Chinese (Dialect-Liaoning) | Female | 东北辽宁方言，幽默诙谐 |
-| zh-CN-shaanxi-XiaoniNeural | 晓妮 | zh-CN-shaanxi | Chinese (Dialect-Shaanxi) | Female | 陕西方言，明快爽朗 |
+| **zh-CN-YunyangNeural** | 云扬 | 男 | 新闻播报腔，专业稳重，中性客观 | 科技解读、财经分析、时事评论、知识科普 | 轻松闲聊、情感故事、娱乐八卦 |
+| **zh-CN-YunxiNeural** | 云希 | 男 | 阳光活泼，年轻化，邻家大男孩 | 生活方式、旅行分享、产品测评、轻科普 | 严肃新闻、商业深度、学术讲座 |
+| **zh-CN-XiaoxiaoNeural** | 晓晓 | 女 | 温暖亲和，微甜系，治愈感强 | 情感话题、文化艺术、生活美学、心理健康 | 硬核科技、金融投资、竞技体育 |
+| **zh-CN-XiaohanNeural** | 晓涵 | 女 | 知性成熟，端庄大方 | 商业访谈、女性话题、职场成长、读书分享 | 二次元、游戏电竞、街头文化 |
+| **zh-CN-XiaomoNeural** | 晓墨 | 女 | 沉稳低沉，职场精英感 | 深度访谈、行业洞察、领导力话题 | 萌系内容、青春校园 |
+| **zh-CN-YunjianNeural** | 云健 | 男 | 激情澎湃，力量感强 | 体育赛事、创业故事、励志鸡汤 | 冥想放松、ASMR、睡前故事 |
+| **zh-CN-YunxiaNeural** | 云夏 | 男 | 可爱孩子气，少年感 | 动漫讨论、校园话题、二次元文化 | 商业财经、严肃时政 |
+| **zh-CN-XiaoyiNeural** | 晓伊 | 女 | 活泼可爱，元气少女 | 美妆时尚、美食探店、宠物话题 | 学术讲座、政策解读 |
+
+---
+
+## 推荐播客组合（按主题）
+
+| 播客类型 | 推荐组合 | 理由 |
+| --- | --- | --- |
+| **科技/数码** | 云扬（男）+ 晓涵（女） | 云扬的专业感 + 晓涵的知性，适合深度解读 |
+| **商业/财经** | 云扬（男）+ 晓墨（女） | 双方都偏成熟稳重，契合商业严肃调性 |
+| **生活方式** | 云希（男）+ 晓晓（女） | 阳光活泼 + 温暖治愈，轻松亲和 |
+| **情感/心理** | 晓晓（女）+ 云希（男） | 温暖倾听者 + 阳光陪伴者 |
+| **体育/电竞** | 云健（男）+ 晓伊（女） | 激情解说 + 元气助攻 |
+| **文化/读书** | 晓涵（女）+ 云扬（男） | 知性优雅 + 稳重播报 |
+| **严肃新闻** | 云扬（男）+ 晓墨（女） | 双方都偏播音腔，客观中立 |
+
+---
+
+## 方言/地区音色（特色播客）
+
+| ShortName | 角色名 | 方言 | 播客场景建议 |
+| --- | --- | --- | --- |
+| zh-CN-liaoning-XiaobeiNeural | 晓北 | 东北话 | 喜剧脱口秀、方言文化、搞笑段子 |
+| zh-CN-shaanxi-XiaoniNeural | 晓妮 | 陕西话 | 地方文化、美食探店、方言特色内容 |
+
+---
+
+## 完整音色列表（备查）
+
+| ShortName | RoleName | Locale | Gender | Remark |
+| --- | --- | --- | --- | --- |
 | zh-HK-HiuGaaiNeural | 晓佳 | zh-HK | Chinese (Cantonese) | Female | 粤语女声，友好正式 |
 | zh-HK-HiuMaanNeural | 晓曼 | zh-HK | Chinese (Cantonese) | Female | 粤语女声，友好日常 |
 | zh-HK-WanLungNeural | 云龙 | zh-HK | Chinese (Cantonese) | Male | 粤语男声，沉稳 |
