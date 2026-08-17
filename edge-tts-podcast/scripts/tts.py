@@ -131,9 +131,19 @@ def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
     url = f"{base_url}/v1/audio/speech"
 
     payload = {
-        "model": "tts-1",
-        "input": content,
         "voice": voice_id,
+        "input": content,
+        "speed": 1.0,
+        "pitch": 1.0,
+        "stream": False,
+        "cleaning_options": {
+            "remove_markdown": True,
+            "remove_emoji": True,
+            "remove_urls": True,
+            "remove_line_breaks": True,
+            "remove_citation_numbers": True,
+            "custom_keywords": "",
+        },
     }
     if speed:
         try:
@@ -146,13 +156,23 @@ def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
         except (ValueError, TypeError):
             pass
 
-    body = json.dumps(payload).encode("utf-8")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    # 从 base_url 提取 origin 用于 Referer/Origin headers
+    from urllib.parse import urlparse
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+
     req = urllib.request.Request(
         url,
         data=body,
         headers={
-            "Content-Type": "application/json",
+            "Content-Type": "application/json; charset=utf-8",
             "Authorization": f"Bearer {api_key}",
+            "Accept": "*/*",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Origin": origin,
+            "Referer": f"{origin}/",
         },
         method="POST",
     )

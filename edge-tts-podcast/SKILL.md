@@ -211,10 +211,10 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 **输入类型 C（URL）**：
 
 ```
-1. WebFetch 抓取 URL 内容
-2. 保存为 sources/article.md
-3. 简要总结文章核心观点（300字以内，写入 meta.md）
-4. 若内容不足，自动生成2-3个补充搜索查询 → 执行 2.2
+1. 调用 fetch_article.py 抓取并清洗为纯文本（伪装微信浏览器，绕过常见反爬）：
+   python {{INSkillDir}}/scripts/fetch_article.py <url> <workdir>/sources/article.md
+2. 读取 sources/article.md，简要总结文章核心观点（300字以内，写入 meta.md）
+3. 若内容不足（content_length < 300），自动生成2-3个补充搜索查询 → 执行 2.2
 ```
 
 **输入类型 A/B（想法/关键词）**：
@@ -234,8 +234,11 @@ bash {{INSkillDir}}/scripts/search.sh --num-results 6 "query1" "query2" "query3"
 powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 -NumResults 6 "query1" "query2" "query3"
 ```
 
-4. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，WebFetch 抓取正文
-5. 每篇文章提取**核心信息摘要**（500字以内），保存为 `sources/{n}.md`
+4. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article.py 抓取并清洗：
+   ```bash
+   python {{INSkillDir}}/scripts/fetch_article.py <url> <workdir>/sources/<n>.md
+   ```
+5. 每篇文章提取**核心信息摘要**（500字以内），附加到 `sources/{n}.md`
 6. 将搜索策略和语料清单写入 `meta.md` 的"搜索策略"和"主要语料"章节
 
 **2.3 语料质量检查**
