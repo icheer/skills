@@ -1,0 +1,57 @@
+{
+  "evals": [
+    {
+      "id": "eval-001",
+      "description": "基本触发：用户提供主题关键词，完成Phase 0-1",
+      "input": "/edge-tts-podcast",
+      "expected_behaviors": [
+        "检查环境变量 TTS_BASE_URL, TTS_API_KEY, TAVILY_API_KEY",
+        "引导用户输入播客主题",
+        "明确主题后立即创建工作目录"
+      ]
+    },
+    {
+      "id": "eval-002",
+      "description": "断点续传：已有工作目录时询问是否继续",
+      "input": "/edge-tts-podcast（当前目录已有 lines.csv 且存在 done=0 的行）",
+      "expected_behaviors": [
+        "检测到已有未完成任务",
+        "询问用户是否继续断点任务",
+        "跳转到 Phase 4 继续生成"
+      ]
+    },
+    {
+      "id": "eval-003",
+      "description": "URL输入：抓取文章后生成播客",
+      "input": "帮我基于这篇文章做播客: https://example.com/article",
+      "expected_behaviors": [
+        "WebFetch 抓取 URL",
+        "保存到 sources/article.md",
+        "基于文章内容生成双人播客脚本",
+        "lines.csv 格式正确（tab分隔，含表头）"
+      ]
+    },
+    {
+      "id": "eval-004",
+      "description": "lines.csv 格式验证",
+      "input": "生成一期关于量子计算的中等时长播客",
+      "expected_behaviors": [
+        "lines.csv 使用 tab 分隔",
+        "包含表头行: done\\tvoice_id\\tcontent\\tspeed\\tpitch",
+        "所有 done 列初始值为 0",
+        "voice_id 使用预设男女组合: zh-CN-YunxiNeural / zh-CN-XiaoxiaoNeural",
+        "行数在 40-60 之间（中等时长）"
+      ]
+    },
+    {
+      "id": "eval-005",
+      "description": "环境变量未配置时的错误提示",
+      "input": "/edge-tts-podcast（未配置任何环境变量）",
+      "expected_behaviors": [
+        "清晰列出缺失的环境变量名",
+        "提供配置方式说明",
+        "不继续执行后续阶段"
+      ]
+    }
+  ]
+}
