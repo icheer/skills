@@ -14,7 +14,10 @@ Output JSON (stdout): {"title": "...", "url": "...", "content": "...", "content_
 Saved file: plain text only (title header + body lines)
 
 Dependencies: requests, beautifulsoup4  (auto-installed if missing)
+Python: 3.7+  (PEP 604 annotations deferred via __future__ import)
 """
+
+from __future__ import annotations
 
 import sys
 import re

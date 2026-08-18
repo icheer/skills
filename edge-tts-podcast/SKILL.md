@@ -18,27 +18,47 @@ description: >
 
 ---
 
-## 环境变量 (必须提前配置)
+## 环境变量
 
-技能启动时立即检查以下环境变量。加载优先级：
+加载优先级：
 
 | 优先级 | 来源 |
 |--------|------|
-| 1 | 系统环境变量（`$env:TTS_BASE_URL` / `export TTS_BASE_URL=`） |
+| 1 | 系统环境变量（`$env:TAVILY_API_KEY` / `export TAVILY_API_KEY=`） |
 | 2 | `~/.env` 文件（`KEY=VALUE` 格式） |
-| 3 | 项目根目录 `.env`（仅 tts.py/concat.py 等脚本读取） |
 
-必需变量：
+**必需**（仅一项）：
 
 ```
-TTS_BASE_URL=https://your-worker.workers.dev   # Edge TTS Cloudflare Worker 地址
-TTS_API_KEY=your_api_key_here                  # TTS 服务 Bearer Token
 TAVILY_API_KEY=tvly-your_key_here              # Tavily 搜索 API Key
 ```
 
+支持**多 Key 轮询**：用逗号拼接多个 Key，脚本会按逗号切分、剔除空白项，
+每次运行从有效 Key 中随机选一个，用于分摊配额。
+
+```
+TAVILY_API_KEY=tvly-11111,tvly-22222,tvly-33333
+```
+
+用 `bash {{INSkillDir}}/scripts/search.sh --check` 可列出已识别的全部 Key（脱敏显示）。
+
+**可选**（不配置时 TTS 直连微软，无需任何设置）：
+
+```
+TTS_BASE_URL=https://your-worker.workers.dev   # 仅在直连被墙/被限流时配置
+TTS_API_KEY=your_api_key_here                  # 仅当该 worker 启用了鉴权
+```
+
+TTS 后端由 `tts.py` 自动选择：
+
+| `TTS_BASE_URL` | 后端 | 说明 |
+|---|---|---|
+| 未设置（默认） | 直连微软 Edge TTS | 零配置；请求从本机 IP 直接发出 |
+| 已设置 | edgetts-cloudflare-workers 代理 | 直连不可用时的逃生舱 |
+
 配置模板见 `.env.example`（复制为 `~/.env` 或设置系统环境变量）。
 
-**若环境变量未配置完整，立即提示用户配置并终止执行。**
+**若 `TAVILY_API_KEY` 缺失，立即提示用户配置并终止执行。**
 
 ---
 
@@ -65,7 +85,7 @@ Tab（`\t`）分隔，**含表头行**，行号 = 音频文件名（1.mp3 起）
 
 ```
 done	voice_id	content	speed	pitch
-0	zh-CN-YunxiNeural	大家好，欢迎收听今天的播客。	1	1.0	
+0	zh-CN-YunxiNeural	大家好，欢迎收听今天的播客。	1	1.0
 0	zh-CN-XiaoxiaoNeural	对，今天我们聊的话题是 AI Agent 的发展趋势。
 ```
 
@@ -109,19 +129,22 @@ done	voice_id	content	speed	pitch
 
 **步骤**：
 
-1. 检查 `TTS_BASE_URL`、`TTS_API_KEY`、`TAVILY_API_KEY` 是否已配置
-   - 检查系统环境变量
-   - 若未找到，尝试读取 `~/.env`（grep `KEY=` 格式）
-2. 若任何一项缺失：
+1. 检查 TTS 后端连通性（不需要任何环境变量）：
+   ```bash
+   python {{INSkillDir}}/scripts/tts.py --check
    ```
-   ❌ 缺少环境变量: TTS_BASE_URL, TTS_API_KEY
-   请在 ~/.env 或系统环境变量中配置以下项：
-     TTS_BASE_URL=https://your-worker.workers.dev
-     TTS_API_KEY=your_api_key_here
+   该命令会自行报告当前走直连还是代理，并实测一次连接。若直连失败，它会提示配置
+   `TTS_BASE_URL` 改走代理——把这个提示原样转达给用户，**不要修改脚本**。
+
+2. 检查 `TAVILY_API_KEY` 是否已配置（系统环境变量 → `~/.env`）。若缺失：
+   ```
+   ❌ 缺少环境变量: TAVILY_API_KEY
+   请在 ~/.env 或系统环境变量中配置：
      TAVILY_API_KEY=tvly-your_key_here
    参考: .env.example
    ```
    终止并等待用户配置后重新激活。
+
 3. 检查是否在已有工作目录中（当前目录或子目录有 `lines.csv`）→ 询问是否继续断点任务（直接跳到 Phase 4）
 
 ---
@@ -223,10 +246,40 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 
 **2.2 Tavily 搜索（用于 A/B 输入，或 C 输入的补充）**
 
-搜索策略：
-1. 将用户输入拆解为 **3-4 个正交查询**
-2. 每个查询 `num_results=6`，控制总条目 ≤ 24
-3. 执行并行搜索：
+**① 查询拆解**
+
+将用户输入拆解为 **3-4 个正交查询**——关键词之间尽量不重叠，各自覆盖一个角度。
+从以下维度中挑选：
+
+| 维度 | 说明 | 在播客里的用处 |
+|------|------|---------------|
+| Definition | 核心概念是什么 | 开场向听众交代背景 |
+| News | 最新动态、时间线 | 话题的由头，"最近为什么火" |
+| Data | 统计数据、市场份额、基准测试 | 嘉宾口中的"有数据显示……" |
+| Opinion | 专家评论、争议、批评声音 | 制造对话张力，让两人有得争 |
+| Comparison | 与竞品/旧方案对比 | 主持人追问"那跟 X 比呢" |
+| Technical | 论文、白皮书、技术细节 | 深度展开时的硬核支撑 |
+
+**Data 和 Opinion 对播客尤其关键**：前者让对话有实感，避免通篇空谈；
+后者提供可争论的立场，避免两位主播一路互相点头。
+
+**② 语言策略**
+
+按**信息源的实际分布**决定查询语言，而不是按播客的输出语言。
+用英文搜到的语料，在 Phase 3 里照样转述成中文口语。
+
+| 领域 | 推荐比例（英 : 中） |
+|------|-------------------|
+| 计算机科学、AI、Web3/Crypto、国际金融、前沿医学、国际政治 | 英文为主 4:1 ~ 5:0 |
+| 中国本土政策、A股、中文流行文化、本地生活服务、国内互联网产品 | 中文为主 1:4 ~ 0:5 |
+| 跨境话题（中美科技竞争、品牌出海、跨国监管） | 中英各半 2:2 |
+
+英文查询的两个额外好处：一手信源更多（官方博客、论文、财报、开发者文档），且能绕开中文内容农场的多手转述。
+但涉及国内语境的细节——政策名称、平台生态、用户习惯、本地价格——必须用中文查，英文报道在这些地方经常失真。
+
+**③ 执行并行搜索**
+
+每个查询 `num_results=6`，控制总条目 ≤ 24：
 
 ```bash
 bash {{INSkillDir}}/scripts/search.sh --num-results 6 "query1" "query2" "query3"
@@ -234,12 +287,15 @@ bash {{INSkillDir}}/scripts/search.sh --num-results 6 "query1" "query2" "query3"
 powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 -NumResults 6 "query1" "query2" "query3"
 ```
 
-4. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article.py 抓取并清洗：
+**④ 结果处理**
+
+1. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article.py 抓取并清洗：
    ```bash
    python {{INSkillDir}}/scripts/fetch_article.py <url> <workdir>/sources/<n>.md
    ```
-5. 每篇文章提取**核心信息摘要**（500字以内），附加到 `sources/{n}.md`
-6. 将搜索策略和语料清单写入 `meta.md` 的"搜索策略"和"主要语料"章节
+2. 每篇文章提取**核心信息摘要**（500字以内），附加到 `sources/{n}.md`
+3. 将搜索策略（含所选维度与语言比例的理由）和语料清单写入 `meta.md` 的
+   "搜索策略"和"主要语料"章节
 
 **2.3 语料质量检查**
 
@@ -300,11 +356,16 @@ python {{INSkillDir}}/scripts/tts.py <workdir>
 ```
 
 脚本会：
-1. 读取 `lines.csv`，跳过 `done=1` 的行
-2. 对每个未完成行调用 TTS API
-3. 将音频保存为 `voices/{行号}.mp3`
-4. 每行完成后立即将 `done` 更新为 `1`（断点续传保障）
-5. 输出进度日志
+1. 自动选择 TTS 后端（默认直连微软；配了 `TTS_BASE_URL` 则走代理），并打印当前后端
+2. 读取 `lines.csv`，跳过 `done=1` 的行
+3. **串行**逐行调用 TTS（不并发，避免限流并保证状态一致）
+4. 将音频保存为 `voices/{行号}.mp3`
+5. 每行完成后立即将 `done` 更新为 `1`（原子写入，断点续传保障）
+6. 输出进度日志
+
+可选参数：
+- `--line N`：只处理第 N 行（1-indexed），用于单行重生成
+- `--delay S`：行间等待秒数，直连模式默认 0.3s。若报 HTTP 429 被限流，加大到 1~2s
 
 **4.2 断点续传**
 
@@ -315,7 +376,9 @@ python {{INSkillDir}}/scripts/tts.py <workdir>
 **4.3 错误处理**
 
 - 单行 TTS 失败：记录错误，跳过该行继续处理，最终报告失败行数
-- API 连接失败：等待10秒后重试，最多3次，仍失败则暂停并报告
+- API 连接失败：退避重试（10s / 20s），最多 3 次，仍失败则跳过该行并报告
+- 直连模式遇到 HTTP 429（被微软限流）：加大 `--delay` 重跑，或改配 `TTS_BASE_URL` 走代理
+- 直连模式遇到 HTTP 401：脚本会自动换取新 token 并重试，无需干预
 
 Phase 4 完成后，告知用户"所有音频片段已生成，共 N 个文件"，更新 `meta.md`。
 
@@ -363,7 +426,7 @@ Phase 0 检测逻辑：
 ### 单人播客
 
 - `lines.csv` 所有行使用同一个 `voice_id`
-- 静音间隔可适当缩短（300ms）
+- 静音间隔可适当缩短（250ms）
 
 ### 用户临时修改文字稿
 

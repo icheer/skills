@@ -19,7 +19,11 @@ Silence files are looked up relative to this script:
   scripts/silence/1000ms.mp3
 
 If the silence file is missing, a warning is printed and silence is skipped.
+
+Python: 3.7+  (PEP 604 annotations deferred via __future__ import)
 """
+
+from __future__ import annotations
 
 import os
 import sys

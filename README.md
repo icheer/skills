@@ -482,12 +482,12 @@ obscura --stealth --proxy socks5://user:pass@proxy:1080 fetch https://example.co
 
 ## edge-tts-podcast
 
-> 播客语音自动生成流水线：从一个想法/URL/关键词出发，自动搜索语料 → AI 生成自然对话脚本 → 逐行调用 Edge TTS 合成音频 → 拼接成完整播客 MP3。支持断点续传和跨会话恢复。
+> 播客语音自动生成流水线：从一个想法/URL/关键词出发，自动搜索语料 → AI 生成自然对话脚本 → 逐行调用 Edge TTS 合成音频 → 拼接成完整播客 MP3。TTS 直连微软、零配置，支持断点续传和跨会话恢复。
 
 ### 5 阶段工作流
 
 ```
-Phase 0: 环境变量检查（TTS_BASE_URL / TTS_API_KEY / TAVILY_API_KEY）
+Phase 0: 环境检查（TTS 后端连通性 + TAVILY_API_KEY）
     ↓
 Phase 1: 引导式需求收集（主题、时长、音色、语言风格）
     ↓  （创建工作目录 {yyyy-MM-dd}_{topic}/ ）
@@ -514,10 +514,11 @@ Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3�
 - **音色场景适配** — 根据播客主题推荐合适的音色组合（科技/生活/商业/体育等）
 
 **可靠 TTS 生成**
-- **逐行处理** — 每行生成完立即更新 `done` 列，确保断点续传
+- **零配置直连** — 内置微软 Edge TTS 完整调用链（HMAC 签名换取 token → SSML 合成），默认无需任何 TTS 相关环境变量
+- **代理逃生舱** — 配置 `TTS_BASE_URL` 即可切回 Cloudflare Worker 代理，应对直连被限流/被墙
+- **逐行串行处理** — 每行生成完立即原子更新 `done` 列，确保断点续传
 - **跨会话恢复** — 在新会话中继续未完成任务，自动跳过已生成的行
-- **完整 POST body** — `stream: false` + `cleaning_options`（去 Markdown/Emoji/URL 等）
-- **防 Cloudflare 拦截** — 完整请求头（User-Agent / Origin / Referer）
+- **本地文本清洗** — 去 Markdown / Emoji / URL / 引用数字，按标点智能分块
 
 **音频拼接**
 - **纯 Python 实现** — 无需 ffmpeg，二进制 MP3 拼接 + ID3 标签处理
@@ -548,25 +549,38 @@ Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3�
 
 ### 环境配置
 
-需提前配置三个环境变量（优先级：系统环境变量 → `~/.env`）：
+只需一个环境变量（优先级：系统环境变量 → `~/.env`）：
 
 ```bash
-TTS_BASE_URL=https://your-worker.workers.dev   # Edge TTS Cloudflare Worker 地址
-TTS_API_KEY=your_tts_api_key_here              # TTS 服务 Bearer Token
-TAVILY_API_KEY=tvly-your_key_here              # Tavily 搜索 API Key
+TAVILY_API_KEY=tvly-your_key_here              # Tavily 搜索 API Key（必需）
 ```
 
-配置模板见 `.env.example`。
+支持多 Key 轮询，用逗号拼接即可，每次运行随机选用一个以分摊配额：
+
+```bash
+TAVILY_API_KEY=tvly-11111,tvly-22222,tvly-33333
+```
+
+TTS 默认直连微软，无需配置。仅当直连被限流或不可达时，才需要指定代理：
+
+```bash
+TTS_BASE_URL=https://your-worker.workers.dev   # 可选，Edge TTS Worker 地址
+TTS_API_KEY=your_tts_api_key_here              # 可选，仅当该 worker 启用鉴权
+```
+
+配置模板见 `.env.example`。用 `python scripts/tts.py --check` 可查看当前后端并实测连通性。
 
 ### 技术依赖
 
 | 组件 | 依赖 | 说明 |
 | --- | --- | --- |
 | `scripts/fetch_article.py` | requests + beautifulsoup4 | 自动安装 |
-| `scripts/tts.py` | 纯 Python（stdlib） | 无额外依赖 |
+| `scripts/tts.py` | 纯 Python（stdlib） | 无额外依赖，内置微软 TTS 调用链 |
 | `scripts/concat.py` | 纯 Python（stdlib） | 无额外依赖 |
 | `scripts/search.sh` | bash + curl | macOS / Linux / Git Bash |
 | `scripts/search.ps1` | PowerShell（系统自带） | Windows 回退方案 |
+
+所有 Python 脚本兼容 **Python 3.7+**。
 
 ### 使用示例
 
@@ -574,7 +588,7 @@ TAVILY_API_KEY=tvly-your_key_here              # Tavily 搜索 API Key
 用户: 帮我做一期关于"AI Agent 最新进展"的播客
 
 Agent:
- → Phase 0: 检查环境变量 ✅
+ → Phase 0: 检查 TTS 后端（直连微软 ✅）+ TAVILY_API_KEY ✅
  → Phase 1: 引导式提问（主题确认、时长选择、音色方案）
  → Phase 2: Tavily 搜索 3 个正交查询 → 抓取 Top 5 结果 → 保存到 sources/
  → Phase 3: 生成 lines.csv（40-60 行，男女对话）

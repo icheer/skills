@@ -3,32 +3,56 @@
 Edge TTS Podcast — TTS Generation Script
 
 Usage:
-  python tts.py <workdir>           # Process all undone lines
-  python tts.py <workdir> --line N  # Process a specific line (1-indexed)
-  python tts.py --check             # Check env var configuration
+  python tts.py <workdir>              # Process all undone lines
+  python tts.py <workdir> --line N     # Process a specific line (1-indexed)
+  python tts.py <workdir> --delay 0.5  # Seconds to wait between lines
+  python tts.py --check                # Check backend configuration
+
+Two backends, selected automatically:
+
+  1. DIRECT (default, zero-config)
+     Talks to Microsoft Edge TTS directly, reproducing the auth flow of the
+     MS Translator Android app. No environment variables, no proxy service.
+
+  2. PROXY (opt-in fallback)
+     If TTS_BASE_URL is set, requests go to an edgetts-cloudflare-workers
+     deployment instead. Use this when direct access is blocked or rate
+     limited. TTS_API_KEY is optional (only needed if the worker sets one).
 
 Environment variables (priority: system env > ~/.env):
-  TTS_BASE_URL  — Edge TTS Cloudflare Worker base URL
-  TTS_API_KEY   — Bearer token for TTS service
+  TTS_BASE_URL  — optional; Edge TTS Cloudflare Worker base URL
+  TTS_API_KEY   — optional; Bearer token, only if the worker requires one
+
+Python: 3.7+  (stdlib only, no third-party dependencies)
 """
 
+from __future__ import annotations
+
 import os
+import re
 import sys
 import csv
 import time
 import json
-import tempfile
+import base64
+import hashlib
+import hmac
+import uuid
 import urllib.request
 import urllib.error
+from email.utils import formatdate
+from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
 # Env loading
 # ---------------------------------------------------------------------------
 
 def load_env():
-    """Load TTS_BASE_URL and TTS_API_KEY.
+    """Load optional TTS_BASE_URL / TTS_API_KEY.
+
     Priority: system env → ~/.env
-    Returns (base_url, api_key) or raises SystemExit with instructions.
+    Both are optional: an empty base_url selects the direct backend.
+    Returns (base_url, api_key), either of which may be "".
     """
     base_url = os.environ.get("TTS_BASE_URL", "").strip()
     api_key  = os.environ.get("TTS_API_KEY",  "").strip()
@@ -49,19 +73,6 @@ def load_env():
                     elif k == "TTS_API_KEY" and not api_key:
                         api_key = v
 
-    missing = []
-    if not base_url:
-        missing.append("TTS_BASE_URL")
-    if not api_key:
-        missing.append("TTS_API_KEY")
-
-    if missing:
-        print(f"[FATAL] 缺少环境变量: {', '.join(missing)}")
-        print("请在 ~/.env 或系统环境变量中配置：")
-        print("  TTS_BASE_URL=https://your-worker.workers.dev")
-        print("  TTS_API_KEY=your_api_key_here")
-        sys.exit(1)
-
     return base_url.rstrip("/"), api_key
 
 
@@ -72,9 +83,7 @@ def load_env():
 HEADER = ["done", "voice_id", "content", "speed", "pitch"]
 
 def read_csv(workdir):
-    """Read lines.csv, return (header_present, rows).
-    rows is a list of dicts with keys matching HEADER.
-    """
+    """Read lines.csv into a list of dicts with keys matching HEADER."""
     csv_path = os.path.join(workdir, "lines.csv")
     if not os.path.isfile(csv_path):
         print(f"[FATAL] 找不到 lines.csv: {csv_path}")
@@ -89,7 +98,7 @@ def read_csv(workdir):
 
 
 def write_csv(workdir, rows):
-    """Write rows back to lines.csv (preserves all columns)."""
+    """Write rows back to lines.csv atomically (preserves all columns)."""
     csv_path = os.path.join(workdir, "lines.csv")
     if not rows:
         return
@@ -99,9 +108,6 @@ def write_csv(workdir, rows):
     for k in all_keys:
         if k not in fieldnames:
             fieldnames.append(k)
-
-    with open(csv_path, encoding="utf-8", newline="") as f:
-        original = f.read()
 
     tmp_path = csv_path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8", newline="") as f:
@@ -120,21 +126,237 @@ def mark_done(workdir, row_index, rows):
 
 
 # ---------------------------------------------------------------------------
-# TTS API call
+# Backend 1: direct Microsoft Edge TTS
+#
+# Port of the non-streaming path in edgetts-cloudflare-workers-webui/worker.js.
+# Concurrency and streaming are deliberately omitted: podcast lines are short
+# and processed one at a time, so a sequential chunk loop is enough.
 # ---------------------------------------------------------------------------
 
-def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
-             max_retries=3):
-    """Call the Edge TTS API and save the MP3 to output_path.
-    Returns True on success, False on failure.
-    """
-    url = f"{base_url}/v1/audio/speech"
+# HMAC key of the MS Translator Android app, same one the worker uses.
+_SIGN_KEY = base64.b64decode(
+    "oik6PdDdMnOXemTbwvMn9de/h9lFnfBaCWbGMMZqqoSaQaqUOqjVGm5NqsmjcBI1x"
+    "+sS9ugjB55HEJWRiFXYFw=="
+)
+_ENDPOINT_URL = "https://dev.microsofttranslator.com/apps/endpoint?api-version=1.0"
+_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
+_CHUNK_SIZE = 300
+_TOKEN_REFRESH_MARGIN = 300  # refresh the token 5 min before it expires
 
+# Process-wide token cache. A token lasts ~40 min, so one fetch covers a
+# whole podcast run.
+_token_cache = {"endpoint": None, "expired_at": 0.0}
+
+
+def _ms_signature(url_str):
+    """Build the X-MT-Signature header value.
+
+    Mirrors worker.js sign(): only the string being signed is lowercased —
+    the date and uuid echoed back in the header keep their original case.
+    """
+    url = url_str.split("://", 1)[1]
+    # encodeURIComponent leaves -_.!~*'() untouched; urllib.quote does not.
+    encoded_url = quote(url, safe="-_.!~*'()")
+    uuid_str = uuid.uuid4().hex
+    formatted_date = formatdate(usegmt=True)  # same shape as JS toUTCString()
+
+    to_sign = f"MSTranslatorAndroidApp{encoded_url}{formatted_date}{uuid_str}".lower()
+    digest = hmac.new(_SIGN_KEY, to_sign.encode("utf-8"), hashlib.sha256).digest()
+    sig_b64 = base64.b64encode(digest).decode("ascii")
+
+    return f"MSTranslatorAndroidApp::{sig_b64}::{formatted_date}::{uuid_str}"
+
+
+def _jwt_expiry(token):
+    """Extract the exp claim from a JWT without verifying it."""
+    payload_b64 = token.split(".")[1]
+    payload_b64 += "=" * (-len(payload_b64) % 4)  # base64url has no padding
+    return json.loads(base64.urlsafe_b64decode(payload_b64))["exp"]
+
+
+def _ms_get_endpoint(force=False):
+    """Fetch (and cache) the Microsoft TTS region + auth token."""
+    now = time.time()
+    if (not force and _token_cache["endpoint"]
+            and now < _token_cache["expired_at"] - _TOKEN_REFRESH_MARGIN):
+        return _token_cache["endpoint"]
+
+    req = urllib.request.Request(
+        _ENDPOINT_URL,
+        data=b"",
+        method="POST",
+        headers={
+            "Accept-Language": "zh-Hans",
+            "X-ClientVersion": "4.0.530a 5fe1dc6c",
+            "X-UserId": "0f04d16a175c411e",
+            "X-HomeGeographicRegion": "zh-Hans-CN",
+            "X-ClientTraceId": uuid.uuid4().hex,
+            "X-MT-Signature": _ms_signature(_ENDPOINT_URL),
+            "User-Agent": "okhttp/4.5.0",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "0",
+            # No Accept-Encoding: urllib will not decompress gzip for us.
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        _token_cache["endpoint"] = data
+        _token_cache["expired_at"] = _jwt_expiry(data["t"])
+        return data
+    except Exception:
+        # Fall back to a stale token rather than failing outright.
+        if _token_cache["endpoint"]:
+            print("  [提示] 换取新 token 失败，沿用缓存的旧 token")
+            return _token_cache["endpoint"]
+        raise
+
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001F5FF"  # symbols & pictographs
+    "\U0001F600-\U0001F64F"  # emoticons
+    "\U0001F680-\U0001F6FF"  # transport & map
+    "\U0001F900-\U0001F9FF"  # supplemental symbols
+    "\U0001FA70-\U0001FAFF"  # extended-A
+    "\U0001F1E6-\U0001F1FF"  # regional indicators (flags)
+    "☀-➿"          # misc symbols & dingbats
+    "⬀-⯿"          # misc symbols & arrows
+    "️"                 # variation selector-16
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def clean_text(text):
+    """Port of worker.js cleanText() with all options enabled."""
+    t = text
+    t = re.sub(r"https?://\S+", "", t)              # urls
+    t = re.sub(r"!\[.*?\]\(.*?\)", "", t)           # md images
+    t = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", t)       # md links → text
+    t = re.sub(r"(\*\*|__)(.*?)\1", r"\2", t)       # bold
+    t = re.sub(r"(\*|_)(.*?)\1", r"\2", t)          # italic
+    t = re.sub(r"`{1,3}(.*?)`{1,3}", r"\1", t)      # code
+    t = re.sub(r"#{1,6}\s", "", t)                  # headings
+    t = _EMOJI_RE.sub("", t)                        # emoji
+    t = re.sub(r"\s\d{1,2}(?=[.。，,;；:：]|$)", "", t)  # citation numbers
+    t = re.sub(r"\s+", " ", t)                      # collapse whitespace
+    return t.strip()
+
+
+def chunk_text(text, max_len=_CHUNK_SIZE):
+    """Port of worker.js smartChunkText(): split on punctuation boundaries."""
+    if not text:
+        return []
+
+    chunks = []
+    current = ""
+    # Capturing group keeps the separators, same as the JS split.
+    for part in re.split(r"([.?!,;:\n。？！，；：\r]+)", text):
+        if not part:
+            continue
+        if len(current) + len(part) <= max_len:
+            current += part
+        else:
+            if current.strip():
+                chunks.append(current.strip())
+            current = part
+    if current.strip():
+        chunks.append(current.strip())
+
+    # A run with no punctuation never splits above, so it can still exceed
+    # max_len. worker.js leaves it oversized; hard split it here instead so
+    # the SSML body stays bounded. No effect on normal punctuated text.
+    out = []
+    for c in chunks:
+        if len(c) <= max_len:
+            out.append(c)
+        else:
+            out.extend(c[i:i + max_len] for i in range(0, len(c), max_len))
+
+    return [c for c in out if c]
+
+
+def build_ssml(text, voice, rate, pitch, style="general"):
+    """Port of worker.js getSsml(), preserving literal <break> tags."""
+    breaks = []
+
+    def _stash(m):
+        breaks.append(m.group(0))
+        return f"__BREAK_TAG_{len(breaks) - 1}__"
+
+    staged = re.sub(
+        r"<break\s+time=\"[^\"]*\"\s*/?>|<break\s*/?>|<break\s+time='[^']*'\s*/?>",
+        _stash, text, flags=re.IGNORECASE,
+    )
+    escaped = staged.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    for i, tag in enumerate(breaks):
+        escaped = escaped.replace(f"__BREAK_TAG_{i}__", tag)
+
+    return (
+        '<speak xmlns="http://www.w3.org/2001/10/synthesis" '
+        'xmlns:mstts="http://www.w3.org/2001/mstts" version="1.0" xml:lang="en-US">'
+        f'<voice name="{voice}">'
+        f'<mstts:express-as style="{style}">'
+        f'<prosody rate="{rate}%" pitch="{pitch}%">{escaped}</prosody>'
+        "</mstts:express-as></voice></speak>"
+    )
+
+
+def _ms_synth_chunk(endpoint, text, voice, rate, pitch):
+    """Synthesize one chunk, returning raw MP3 bytes."""
+    url = f"https://{endpoint['r']}.tts.speech.microsoft.com/cognitiveservices/v1"
+    req = urllib.request.Request(
+        url,
+        data=build_ssml(text, voice, rate, pitch).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": endpoint["t"],  # raw JWT, no "Bearer " prefix
+            "Content-Type": "application/ssml+xml",
+            "User-Agent": "okhttp/4.5.0",
+            "X-Microsoft-OutputFormat": _OUTPUT_FORMAT,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return resp.read()
+
+
+def direct_synthesize(content, voice_id, speed, pitch):
+    """Direct backend entry point. Returns MP3 bytes."""
+    rate = f"{(speed - 1) * 100:.0f}"
+    pit  = f"{(pitch - 1) * 100:.0f}"
+
+    chunks = chunk_text(clean_text(content))
+    if not chunks:
+        return b""
+
+    endpoint = _ms_get_endpoint()
+    parts = []
+    for chunk in chunks:
+        try:
+            parts.append(_ms_synth_chunk(endpoint, chunk, voice_id, rate, pit))
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                # Token went stale mid-run; refresh once and retry this chunk.
+                endpoint = _ms_get_endpoint(force=True)
+                parts.append(_ms_synth_chunk(endpoint, chunk, voice_id, rate, pit))
+            else:
+                raise
+    # Microsoft returns bare MPEG frames, so plain concatenation is valid.
+    return b"".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Backend 2: edgetts-cloudflare-workers proxy
+# ---------------------------------------------------------------------------
+
+def proxy_synthesize(base_url, api_key, content, voice_id, speed, pitch):
+    """Proxy backend entry point. Returns MP3 bytes."""
     payload = {
         "voice": voice_id,
         "input": content,
-        "speed": 1.0,
-        "pitch": 1.0,
+        "speed": speed,
+        "pitch": pitch,
         "stream": False,
         "cleaning_options": {
             "remove_markdown": True,
@@ -145,53 +367,80 @@ def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
             "custom_keywords": "",
         },
     }
-    if speed:
-        try:
-            payload["speed"] = float(speed)
-        except (ValueError, TypeError):
-            pass
-    if pitch:
-        try:
-            payload["pitch"] = float(pitch)
-        except (ValueError, TypeError):
-            pass
-
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-
-    # 从 base_url 提取 origin 用于 Referer/Origin headers
-    from urllib.parse import urlparse
     parsed = urlparse(base_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
 
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept": "*/*",
+        # A browser-ish UA keeps Cloudflare from challenging the request.
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/131.0.0.0 Safari/537.36"),
+        "Origin": origin,
+        "Referer": f"{origin}/",
+    }
+    if api_key:  # the worker only enforces auth when it has an API_KEY set
+        headers["Authorization"] = f"Bearer {api_key}"
+
     req = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Content-Type": "application/json; charset=utf-8",
-            "Authorization": f"Bearer {api_key}",
-            "Accept": "*/*",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Origin": origin,
-            "Referer": f"{origin}/",
-        },
+        f"{base_url}/v1/audio/speech",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
         method="POST",
     )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return resp.read()
+
+
+# ---------------------------------------------------------------------------
+# Backend dispatch
+# ---------------------------------------------------------------------------
+
+def _to_float(value, default):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
+             max_retries=3):
+    """Synthesize one line and save it to output_path.
+
+    Routes to the proxy backend when base_url is set, otherwise direct.
+    Returns True on success, False on failure.
+    """
+    speed_f = _to_float(speed, 1.0)
+    pitch_f = _to_float(pitch, 1.0)
+    direct  = not base_url
 
     for attempt in range(1, max_retries + 1):
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                audio_data = resp.read()
-            # Ensure voices/ directory exists
+            if direct:
+                audio = direct_synthesize(content, voice_id, speed_f, pitch_f)
+            else:
+                audio = proxy_synthesize(base_url, api_key, content, voice_id,
+                                         speed_f, pitch_f)
+            if not audio:
+                raise RuntimeError("TTS 返回空音频")
+
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "wb") as f:
-                f.write(audio_data)
+                f.write(audio)
             return True
+
         except urllib.error.HTTPError as e:
             body_text = e.read().decode("utf-8", errors="replace")
             print(f"  [错误] HTTP {e.code}: {body_text[:200]}")
-            if e.code in (401, 403):
+            if direct:
+                if e.code == 401:
+                    _token_cache["endpoint"] = None  # force a fresh token
+                elif e.code == 429:
+                    print("  [提示] 被微软限流，建议加大 --delay 或改用 TTS_BASE_URL 代理。")
+            elif e.code in (401, 403):
                 print("  [提示] 请检查 TTS_API_KEY 是否正确。")
-                return False  # Don't retry auth errors
+                return False  # bad credentials will not fix themselves
         except urllib.error.URLError as e:
             print(f"  [错误] 网络错误: {e.reason}")
         except Exception as e:
@@ -209,18 +458,25 @@ def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
 # Core processing
 # ---------------------------------------------------------------------------
 
-def process_lines(workdir, base_url, api_key, target_line=None):
-    """Process undone lines in lines.csv.
+def process_lines(workdir, base_url, api_key, target_line=None, delay=None):
+    """Process undone lines in lines.csv, one at a time.
 
     target_line: int (1-indexed) to process only that line, or None for all.
+    delay:       seconds to sleep between lines; None picks a backend default.
     """
     rows = read_csv(workdir)
     voices_dir = os.path.join(workdir, "voices")
     os.makedirs(voices_dir, exist_ok=True)
 
+    direct = not base_url
+    if delay is None:
+        # Space out direct calls a little — they all leave from one IP.
+        delay = 0.3 if direct else 0.0
+
+    print(f"[INFO] 后端: {'直连微软 Edge TTS' if direct else base_url}")
+
     total = len(rows)
-    done_count   = sum(1 for r in rows if str(r.get("done", "")).strip() == "1")
-    undone_count = total - done_count
+    done_count = sum(1 for r in rows if str(r.get("done", "")).strip() == "1")
 
     if target_line is not None:
         idx = target_line - 1
@@ -254,7 +510,8 @@ def process_lines(workdir, base_url, api_key, target_line=None):
             continue
 
         output_path = os.path.join(voices_dir, f"{line_num}.mp3")
-        print(f"  [{i}/{len(indices)}] 行 {line_num} [{voice_id}]: {content[:40]}{'…' if len(content)>40 else ''}")
+        preview = content[:40] + ("…" if len(content) > 40 else "")
+        print(f"  [{i}/{len(indices)}] 行 {line_num} [{voice_id}]: {preview}")
 
         ok = call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path)
         if ok:
@@ -264,6 +521,9 @@ def process_lines(workdir, base_url, api_key, target_line=None):
         else:
             failed.append(line_num)
             print(f"    ✗ 行 {line_num} 生成失败，已跳过")
+
+        if delay and i < len(indices):
+            time.sleep(delay)
 
     print(f"\n[完成] 成功 {success} 行，失败 {len(failed)} 行。")
     if failed:
@@ -275,19 +535,39 @@ def process_lines(workdir, base_url, api_key, target_line=None):
 # Main
 # ---------------------------------------------------------------------------
 
+def run_check():
+    """Report which backend is active and verify it is reachable."""
+    base_url, api_key = load_env()
+
+    if base_url:
+        masked = (api_key[:4] + "****" + api_key[-4:]) if len(api_key) > 8 else "****"
+        print("[模式] 代理服务（TTS_BASE_URL 已配置）")
+        print(f"  TTS_BASE_URL = {base_url}")
+        print(f"  TTS_API_KEY  = {masked if api_key else '(未设置，worker 需未启用鉴权)'}")
+        return
+
+    print("[模式] 直连微软 Edge TTS（零配置，无需 TTS_BASE_URL / TTS_API_KEY）")
+    try:
+        ep = _ms_get_endpoint()
+        ttl = (_token_cache["expired_at"] - time.time()) / 60
+        print(f"  ✓ 连接正常  region={ep['r']}  token 有效期 {ttl:.1f} 分钟")
+    except Exception as e:
+        print(f"  ✗ 连接失败: {e}")
+        print("  [提示] 若你的网络无法直连微软，可配置 TTS_BASE_URL 改用代理服务：")
+        print("         TTS_BASE_URL=https://your-worker.workers.dev")
+        sys.exit(1)
+
+
 def main():
     args = sys.argv[1:]
 
     if not args or args[0] == "--check":
-        base_url, api_key = load_env()
-        masked = api_key[:4] + "****" + api_key[-4:] if len(api_key) > 8 else "****"
-        print("[已配置] TTS 环境变量检查通过")
-        print(f"  TTS_BASE_URL = {base_url}")
-        print(f"  TTS_API_KEY  = {masked}")
+        run_check()
         return
 
     workdir     = None
     target_line = None
+    delay       = None
 
     i = 0
     while i < len(args):
@@ -298,12 +578,19 @@ def main():
                 print(f"[FATAL] --line 参数必须是整数，收到: {args[i+1]}")
                 sys.exit(1)
             i += 2
+        elif args[i] == "--delay" and i + 1 < len(args):
+            try:
+                delay = float(args[i + 1])
+            except ValueError:
+                print(f"[FATAL] --delay 参数必须是数字，收到: {args[i+1]}")
+                sys.exit(1)
+            i += 2
         else:
             workdir = args[i]
             i += 1
 
     if not workdir:
-        print("用法: python tts.py <workdir> [--line N]")
+        print("用法: python tts.py <workdir> [--line N] [--delay SECONDS]")
         print("      python tts.py --check")
         sys.exit(1)
 
@@ -313,7 +600,8 @@ def main():
         sys.exit(1)
 
     base_url, api_key = load_env()
-    process_lines(workdir, base_url, api_key, target_line=target_line)
+    process_lines(workdir, base_url, api_key,
+                  target_line=target_line, delay=delay)
 
 
 if __name__ == "__main__":
