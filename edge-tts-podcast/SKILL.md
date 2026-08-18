@@ -85,14 +85,14 @@ Tab（`\t`）分隔，**含表头行**，行号 = 音频文件名（1.mp3 起）
 
 ```
 done	voice_id	content	speed	pitch
-0	zh-CN-YunxiNeural	大家好，欢迎收听今天的播客。	1	1.0
-0	zh-CN-XiaoxiaoNeural	对，今天我们聊的话题是 AI Agent 的发展趋势。
+0	zh-CN-YunyangNeural	大家好，欢迎收听今天的播客。	1	1.0
+0	zh-CN-XiaohanNeural	对，今天我们聊的话题是 AI Agent 的发展趋势。
 ```
 
 | 列 | 说明 |
 |----|------|
 | `done` | `1` = 已完成 TTS，`0` 或空 = 待处理 |
-| `voice_id` | Edge TTS 音色 ID，参考 `references/edge_tts_voices.md` |
+| `voice_id` | Edge TTS 音色 ID，根据播客主题选择合适的音色组合，参考 `references/edge_tts_voices.md` |
 | `content` | 说话内容（纯文本，无 Markdown/Emoji） |
 | `speed` | 语速 0.25–2.0，留空使用默认（1.0） |
 | `pitch` | 音调，留空使用默认 |
@@ -103,17 +103,27 @@ done	voice_id	content	speed	pitch
 
 ## 音色预设
 
-默认使用**男女组合**（辨识度最高）：
+**根据播客主题选择合适预设**，避免音色风格与内容严重不匹配：
+
+| 预设名 | 主持人 | 嘉宾 | 适合场景 |
+|--------|--------|------|----------|
+| `tech` | `zh-CN-YunyangNeural`（云扬，男） | `zh-CN-XiaohanNeural`（晓涵，女） | 科技解读、数码产品、AI/Web3、技术深度 |
+| `business` | `zh-CN-YunyangNeural`（云扬，男） | `zh-CN-XiaomoNeural`（晓墨，女） | 商业分析、财经投资、行业洞察、创业故事 |
+| `news` | `zh-CN-YunyangNeural`（云扬，男） | `zh-CN-XiaomoNeural`（晓墨，女） | 严肃新闻、时事评论、政策解读 |
+| `lifestyle` | `zh-CN-YunxiNeural`（云希，男） | `zh-CN-XiaoxiaoNeural`（晓晓，女） | 生活方式、旅行分享、美食探店、轻科普 |
+| `culture` | `zh-CN-XiaohanNeural`（晓涵，女） | `zh-CN-YunyangNeural`（云扬，男） | 文化艺术、读书分享、历史话题 |
+| `emotion` | `zh-CN-XiaoxiaoNeural`（晓晓，女） | `zh-CN-YunxiNeural`（云希，男） | 情感话题、心理健康、人际关系 |
+
+**按性别组合选择**（当上述场景预设不适用时）：
 
 | 预设名 | 主持人 | 嘉宾 | 说明 |
 |--------|--------|------|------|
-| `male_female`（默认） | `zh-CN-YunxiNeural`（云希，男） | `zh-CN-XiaoxiaoNeural`（晓晓，女） | 最高辨识度 |
-| `female_male` | `zh-CN-XiaoxiaoNeural`（晓晓，女） | `zh-CN-YunxiNeural`（云希，男） | 女主持 |
-| `female_female` | `zh-CN-XiaoxiaoNeural`（晓晓，女） | `zh-CN-XiaohanNeural`（晓涵，女） | 双女声 |
-| `male_male` | `zh-CN-YunxiNeural`（云希，男） | `zh-CN-YunyangNeural`（云扬，男） | 双男声 |
-| `news` | `zh-CN-YunyangNeural`（云扬，男，新闻风格） | `zh-CN-XiaoxiaoNeural`（晓晓，女） | 新闻播报风 |
+| `male_female` | `zh-CN-YunxiNeural`（云希，男） | `zh-CN-XiaoxiaoNeural`（晓晓，女） | 男女搭配，辨识度最高，适合轻松话题 |
+| `female_male` | `zh-CN-XiaoxiaoNeural`（晓晓，女） | `zh-CN-YunxiNeural`（云希，男） | 女主持版本 |
+| `female_female` | `zh-CN-XiaohanNeural`（晓涵，女） | `zh-CN-XiaoxiaoNeural`（晓晓，女） | 双女声，知性 + 温暖 |
+| `male_male` | `zh-CN-YunyangNeural`（云扬，男） | `zh-CN-YunxiNeural`（云希，男） | 双男声，专业 + 活力 |
 
-用户可直接指定任意 voice_id（见 `references/edge_tts_voices.md`）。
+用户也可直接在 `lines.csv` 中指定任意 voice_id（完整列表见 `references/edge_tts_voices.md`）。
 
 ---
 
