@@ -44,6 +44,23 @@ from email.utils import formatdate
 from urllib.parse import urlparse, quote
 
 # ---------------------------------------------------------------------------
+# Safe print for mixed-encoding environments
+# ---------------------------------------------------------------------------
+
+def safe_print(text):
+    """Print text, gracefully downgrading Unicode on encoding errors.
+
+    Windows GBK consoles can't encode ✓/✗ and many Chinese chars. This
+    wrapper catches UnicodeEncodeError and retries with ASCII-safe fallbacks.
+    """
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        # Replace common symbols, then force ASCII with backslashreplace
+        fallback = text.replace("✓", "[OK]").replace("✗", "[X]")
+        print(fallback.encode(sys.stdout.encoding or "utf-8", "replace").decode(sys.stdout.encoding or "utf-8", "ignore"))
+
+# ---------------------------------------------------------------------------
 # Env loading
 # ---------------------------------------------------------------------------
 
@@ -77,6 +94,63 @@ def load_env():
 
 
 # ---------------------------------------------------------------------------
+# Workdir validation and normalization
+# ---------------------------------------------------------------------------
+
+def validate_workdir(workdir_arg):
+    """Validate and normalize the working directory.
+
+    1. Convert to absolute path (relative paths resolved against CWD)
+    2. Check directory name follows YYYY-MM-DD_topic convention
+    3. Create workdir and subdirectories (sources/, voices/) if missing
+    4. Write a .workdir_anchor file containing the absolute path
+
+    This prevents agent hallucination paths from scattering files across
+    wrong locations during multi-turn conversations.
+
+    Args:
+        workdir_arg: path string from command line (relative or absolute)
+
+    Returns:
+        str: normalized absolute path
+
+    Raises:
+        SystemExit: if the resolved path is clearly invalid
+    """
+    # 1. Convert to absolute path
+    workdir = os.path.abspath(workdir_arg)
+
+    # 2. Check naming convention (YYYY-MM-DD_topic)
+    dirname = os.path.basename(workdir)
+    if not re.match(r'^\d{4}-\d{2}-\d{2}_', dirname):
+        safe_print(f"[警告] 工作目录命名不符合技能约定（应为 YYYY-MM-DD_topic）: {dirname}")
+        safe_print(f"       当前路径: {workdir}")
+        safe_print("       这可能是 Agent 上下文污染导致的幻觉路径。")
+        # Don't exit — just warn. The user may have a valid reason for a custom name.
+
+    # 3. Create directory structure
+    try:
+        os.makedirs(workdir, exist_ok=True)
+        os.makedirs(os.path.join(workdir, "sources"), exist_ok=True)
+        os.makedirs(os.path.join(workdir, "voices"), exist_ok=True)
+    except OSError as e:
+        safe_print(f"[FATAL] 无法创建工作目录: {workdir}")
+        safe_print(f"        错误: {e}")
+        sys.exit(1)
+
+    # 4. Write anchor file
+    anchor_file = os.path.join(workdir, ".workdir_anchor")
+    try:
+        with open(anchor_file, "w", encoding="utf-8") as f:
+            f.write(f"{workdir}\n")
+    except Exception:
+        pass  # Non-critical; continue even if anchor write fails
+
+    safe_print(f"[INFO] 工作目录（已规范化）: {workdir}")
+    return workdir
+
+
+# ---------------------------------------------------------------------------
 # CSV helpers
 # ---------------------------------------------------------------------------
 
@@ -86,7 +160,7 @@ def read_csv(workdir):
     """Read lines.csv into a list of dicts with keys matching HEADER."""
     csv_path = os.path.join(workdir, "lines.csv")
     if not os.path.isfile(csv_path):
-        print(f"[FATAL] 找不到 lines.csv: {csv_path}")
+        safe_print(f"[FATAL] 找不到 lines.csv: {csv_path}")
         sys.exit(1)
 
     rows = []
@@ -207,7 +281,7 @@ def _ms_get_endpoint(force=False):
     except Exception:
         # Fall back to a stale token rather than failing outright.
         if _token_cache["endpoint"]:
-            print("  [提示] 换取新 token 失败，沿用缓存的旧 token")
+            safe_print("  [提示] 换取新 token 失败，沿用缓存的旧 token")
             return _token_cache["endpoint"]
         raise
 
@@ -432,23 +506,23 @@ def call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path,
 
         except urllib.error.HTTPError as e:
             body_text = e.read().decode("utf-8", errors="replace")
-            print(f"  [错误] HTTP {e.code}: {body_text[:200]}")
+            safe_print(f"  [错误] HTTP {e.code}: {body_text[:200]}")
             if direct:
                 if e.code == 401:
                     _token_cache["endpoint"] = None  # force a fresh token
                 elif e.code == 429:
-                    print("  [提示] 被微软限流，建议加大 --delay 或改用 TTS_BASE_URL 代理。")
+                    safe_print("  [提示] 被微软限流，建议加大 --delay 或改用 TTS_BASE_URL 代理。")
             elif e.code in (401, 403):
-                print("  [提示] 请检查 TTS_API_KEY 是否正确。")
+                safe_print("  [提示] 请检查 TTS_API_KEY 是否正确。")
                 return False  # bad credentials will not fix themselves
         except urllib.error.URLError as e:
-            print(f"  [错误] 网络错误: {e.reason}")
+            safe_print(f"  [错误] 网络错误: {e.reason}")
         except Exception as e:
-            print(f"  [错误] 未知错误: {e}")
+            safe_print(f"  [错误] 未知错误: {e}")
 
         if attempt < max_retries:
             wait = attempt * 10
-            print(f"  [重试] 第 {attempt} 次失败，{wait}s 后重试…")
+            safe_print(f"  [重试] 第 {attempt} 次失败，{wait}s 后重试…")
             time.sleep(wait)
 
     return False
@@ -473,7 +547,7 @@ def process_lines(workdir, base_url, api_key, target_line=None, delay=None):
         # Space out direct calls a little — they all leave from one IP.
         delay = 0.3 if direct else 0.0
 
-    print(f"[INFO] 后端: {'直连微软 Edge TTS' if direct else base_url}")
+    safe_print(f"[INFO] 后端: {'直连微软 Edge TTS' if direct else base_url}")
 
     total = len(rows)
     done_count = sum(1 for r in rows if str(r.get("done", "")).strip() == "1")
@@ -481,17 +555,17 @@ def process_lines(workdir, base_url, api_key, target_line=None, delay=None):
     if target_line is not None:
         idx = target_line - 1
         if idx < 0 or idx >= total:
-            print(f"[FATAL] 行号 {target_line} 超出范围（共 {total} 行）")
+            safe_print(f"[FATAL] 行号 {target_line} 超出范围（共 {total} 行）")
             sys.exit(1)
         indices = [idx]
-        print(f"[INFO] 处理第 {target_line} 行（共 {total} 行）")
+        safe_print(f"[INFO] 处理第 {target_line} 行（共 {total} 行）")
     else:
         indices = [i for i, r in enumerate(rows)
                    if str(r.get("done", "")).strip() != "1"]
-        print(f"[INFO] 共 {total} 行，已完成 {done_count} 行，待处理 {len(indices)} 行")
+        safe_print(f"[INFO] 共 {total} 行，已完成 {done_count} 行，待处理 {len(indices)} 行")
 
     if not indices:
-        print("[INFO] 没有需要处理的行，全部已完成。")
+        safe_print("[INFO] 没有需要处理的行，全部已完成。")
         return
 
     success = 0
@@ -500,35 +574,35 @@ def process_lines(workdir, base_url, api_key, target_line=None, delay=None):
     for i, row_idx in enumerate(indices, 1):
         row      = rows[row_idx]
         line_num = row_idx + 1  # 1-indexed for filename
-        voice_id = row.get("voice_id", "").strip()
-        content  = row.get("content",  "").strip()
-        speed    = row.get("speed",    "").strip()
-        pitch    = row.get("pitch",    "").strip()
+        voice_id = (row.get("voice_id") or "").strip()
+        content  = (row.get("content")  or "").strip()
+        speed    = (row.get("speed")    or "").strip()
+        pitch    = (row.get("pitch")    or "").strip()
 
         if not voice_id or not content:
-            print(f"  [{i}/{len(indices)}] 行 {line_num}: 跳过（voice_id 或 content 为空）")
+            safe_print(f"  [{i}/{len(indices)}] 行 {line_num}: 跳过（voice_id 或 content 为空）")
             continue
 
         output_path = os.path.join(voices_dir, f"{line_num}.mp3")
         preview = content[:40] + ("…" if len(content) > 40 else "")
-        print(f"  [{i}/{len(indices)}] 行 {line_num} [{voice_id}]: {preview}")
+        safe_print(f"  [{i}/{len(indices)}] 行 {line_num} [{voice_id}]: {preview}")
 
         ok = call_tts(base_url, api_key, voice_id, content, speed, pitch, output_path)
         if ok:
             mark_done(workdir, row_idx, rows)
             success += 1
-            print(f"    ✓ 已保存 voices/{line_num}.mp3")
+            safe_print(f"    ✓ 已保存 voices/{line_num}.mp3")
         else:
             failed.append(line_num)
-            print(f"    ✗ 行 {line_num} 生成失败，已跳过")
+            safe_print(f"    ✗ 行 {line_num} 生成失败，已跳过")
 
         if delay and i < len(indices):
             time.sleep(delay)
 
-    print(f"\n[完成] 成功 {success} 行，失败 {len(failed)} 行。")
+    safe_print(f"\n[完成] 成功 {success} 行，失败 {len(failed)} 行。")
     if failed:
-        print(f"[警告] 失败行号: {failed}")
-        print("       可重新运行此脚本，将自动跳过已完成的行。")
+        safe_print(f"[警告] 失败行号: {failed}")
+        safe_print("       可重新运行此脚本，将自动跳过已完成的行。")
 
 
 # ---------------------------------------------------------------------------
@@ -541,20 +615,20 @@ def run_check():
 
     if base_url:
         masked = (api_key[:4] + "****" + api_key[-4:]) if len(api_key) > 8 else "****"
-        print("[模式] 代理服务（TTS_BASE_URL 已配置）")
-        print(f"  TTS_BASE_URL = {base_url}")
-        print(f"  TTS_API_KEY  = {masked if api_key else '(未设置，worker 需未启用鉴权)'}")
+        safe_print("[模式] 代理服务（TTS_BASE_URL 已配置）")
+        safe_print(f"  TTS_BASE_URL = {base_url}")
+        safe_print(f"  TTS_API_KEY  = {masked if api_key else '(未设置，worker 需未启用鉴权)'}")
         return
 
-    print("[模式] 直连微软 Edge TTS（零配置，无需 TTS_BASE_URL / TTS_API_KEY）")
+    safe_print("[模式] 直连微软 Edge TTS（零配置，无需 TTS_BASE_URL / TTS_API_KEY）")
     try:
         ep = _ms_get_endpoint()
         ttl = (_token_cache["expired_at"] - time.time()) / 60
-        print(f"  ✓ 连接正常  region={ep['r']}  token 有效期 {ttl:.1f} 分钟")
+        safe_print(f"  ✓ 连接正常  region={ep['r']}  token 有效期 {ttl:.1f} 分钟")
     except Exception as e:
-        print(f"  ✗ 连接失败: {e}")
-        print("  [提示] 若你的网络无法直连微软，可配置 TTS_BASE_URL 改用代理服务：")
-        print("         TTS_BASE_URL=https://your-worker.workers.dev")
+        safe_print(f"  ✗ 连接失败: {e}")
+        safe_print("  [提示] 若你的网络无法直连微软，可配置 TTS_BASE_URL 改用代理服务：")
+        safe_print("         TTS_BASE_URL=https://your-worker.workers.dev")
         sys.exit(1)
 
 
@@ -575,14 +649,14 @@ def main():
             try:
                 target_line = int(args[i + 1])
             except ValueError:
-                print(f"[FATAL] --line 参数必须是整数，收到: {args[i+1]}")
+                safe_print(f"[FATAL] --line 参数必须是整数，收到: {args[i+1]}")
                 sys.exit(1)
             i += 2
         elif args[i] == "--delay" and i + 1 < len(args):
             try:
                 delay = float(args[i + 1])
             except ValueError:
-                print(f"[FATAL] --delay 参数必须是数字，收到: {args[i+1]}")
+                safe_print(f"[FATAL] --delay 参数必须是数字，收到: {args[i+1]}")
                 sys.exit(1)
             i += 2
         else:
@@ -590,14 +664,12 @@ def main():
             i += 1
 
     if not workdir:
-        print("用法: python tts.py <workdir> [--line N] [--delay SECONDS]")
-        print("      python tts.py --check")
+        safe_print("用法: python tts.py <workdir> [--line N] [--delay SECONDS]")
+        safe_print("      python tts.py --check")
         sys.exit(1)
 
-    workdir = os.path.abspath(workdir)
-    if not os.path.isdir(workdir):
-        print(f"[FATAL] 工作目录不存在: {workdir}")
-        sys.exit(1)
+    # Validate and normalize workdir (handles relative paths, creates subdirs)
+    workdir = validate_workdir(workdir)
 
     base_url, api_key = load_env()
     process_lines(workdir, base_url, api_key,

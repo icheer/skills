@@ -31,6 +31,27 @@ import glob
 import re
 
 # ---------------------------------------------------------------------------
+# Workdir validation
+# ---------------------------------------------------------------------------
+
+def validate_workdir(workdir_arg: str) -> str:
+    """Validate and normalize the working directory (same logic as tts.py)."""
+    workdir = os.path.abspath(workdir_arg)
+    dirname = os.path.basename(workdir)
+    if not re.match(r'^\d{4}-\d{2}-\d{2}_', dirname):
+        print(f"[警告] 工作目录命名不符合技能约定（应为 YYYY-MM-DD_topic）: {dirname}")
+        print(f"       当前路径: {workdir}")
+
+    # concat.py 只验证目录存在，不负责创建（创建应由 tts.py 或 agent 在 Phase 1 完成）
+    if not os.path.isdir(workdir):
+        print(f"[FATAL] 工作目录不存在: {workdir}")
+        print(f"       请确认路径正确，或先运行 tts.py 创建目录结构。")
+        sys.exit(1)
+
+    print(f"[INFO] 工作目录（已规范化）: {workdir}")
+    return workdir
+
+# ---------------------------------------------------------------------------
 # ID3 tag stripping
 # ---------------------------------------------------------------------------
 
@@ -173,10 +194,8 @@ def main():
         print("[FATAL] 未指定工作目录")
         sys.exit(1)
 
-    workdir = os.path.abspath(workdir)
-    if not os.path.isdir(workdir):
-        print(f"[FATAL] 工作目录不存在: {workdir}")
-        sys.exit(1)
+    # Validate and normalize workdir
+    workdir = validate_workdir(workdir)
 
     voices_dir = os.path.join(workdir, "voices")
     if not os.path.isdir(voices_dir):

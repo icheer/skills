@@ -187,14 +187,49 @@ done	voice_id	content	speed	pitch
 
 **1.3 创建工作目录（尽早执行）**
 
-只要明确了主题（step 1.1 完成后），立即：
+只要明确了主题（step 1.1 完成后），立即创建工作目录。
 
+**⚠️ 重要**：必须使用**绝对路径**，避免相对路径在多轮对话中因上下文污染导致文件分散到错误位置。
+
+**PowerShell 示例**：
+
+```powershell
+# 获取当前目录的绝对路径
+$baseDir = (Get-Location).Path
+$topic = "your-topic-name"  # 从用户输入提取
+$dateStr = (Get-Date -Format "yyyy-MM-dd")
+$workdir = Join-Path $baseDir "${dateStr}_${topic}"
+
+# 创建目录结构
+New-Item -ItemType Directory -Path $workdir -Force
+New-Item -ItemType Directory -Path (Join-Path $workdir "sources") -Force
+New-Item -ItemType Directory -Path (Join-Path $workdir "voices") -Force
+
+Write-Output "工作目录已创建: $workdir"
 ```
-1. 创建目录：{yyyy-MM-dd}_{topic}/
-2. 创建 meta.md（初始版本）
-3. 创建 sources/、voices/ 子目录
-4. 告知用户工作目录已创建
+
+**Bash 示例**：
+
+```bash
+baseDir=$(pwd)
+topic="your-topic-name"
+dateStr=$(date +%Y-%m-%d)
+workdir="$baseDir/${dateStr}_${topic}"
+
+mkdir -p "$workdir"/{sources,voices}
+echo "工作目录已创建: $workdir"
 ```
+
+将此**绝对路径**记录在 `meta.md` 第一行，并在后续所有 Phase 中使用该路径调用脚本：
+
+```markdown
+工作目录: /absolute/path/to/2026-08-18_topic-name
+```
+
+**脚本会自动**：
+- 验证路径是否符合 `YYYY-MM-DD_topic` 命名约定
+- 创建缺失的子目录（`sources/`、`voices/`）
+- 写入 `.workdir_anchor` 锚点文件记录绝对路径
 
 **meta.md 初始模板**：
 
