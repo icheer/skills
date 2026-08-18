@@ -84,6 +84,9 @@ json_escape() {
   local s="$1"
   s="${s//\\/\\\\}"
   s="${s//\"/\\\"}"
+  s="${s//$'\t'/ }"
+  s="${s//$'\r'/ }"
+  s="${s//$'\n'/ }"
   printf '%s' "$s"
 }
 
@@ -167,17 +170,24 @@ fi
 # -----------------------------------------------------------------------------
 run_one() {
   local query="$1" outfile="$2"
-  local esc payload resp code body
+  local esc payload payload_file resp code body
   esc="$(json_escape "$query")"
   payload="{\"query\":\"${esc}\",\"max_results\":${NUM_RESULTS},\"include_answer\":\"basic\",\"auto_parameters\":true,\"exclude_domains\":${EXCLUDE_DOMAINS}}"
+
+  # 必须把 payload 写文件后用 --data-binary @file，不能用 -d "$payload"：
+  # 在 Windows 上 Git Bash 向原生 curl.exe 传参时会把 argv 从 UTF-8 转成系统
+  # ANSI 码页（简中环境为 GBK），中文查询到服务端就成了乱码。文件内容不经过
+  # 这层转码，因此是唯一可靠的传递方式。
+  payload_file="${outfile}.json"
+  printf '%s' "$payload" >"$payload_file"
 
   # -w 追加换行 + HTTP 状态码，便于分离
   resp="$(curl -sS --max-time 30 --retry 2 --retry-delay 1 \
     -w $'\n%{http_code}' \
     -X POST "$TAVILY_URL" \
-    -H "Content-Type: application/json" \
+    -H "Content-Type: application/json; charset=utf-8" \
     -H "Authorization: Bearer ${API_KEY}" \
-    -d "$payload" 2>/dev/null)" || {
+    --data-binary "@${payload_file}" 2>/dev/null)" || {
       printf '===== QUERY: %s =====\n[ERROR] curl 请求失败（网络错误）\n' "$query" >"$outfile"
       return
     }

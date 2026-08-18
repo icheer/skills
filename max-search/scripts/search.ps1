@@ -175,15 +175,26 @@ $searchBlock = {
         exclude_domains = $ExcludeDomains
     }
     $body = $bodyObj | ConvertTo-Json -Compress -Depth 5
-    $headers = @{
-        'Content-Type'  = 'application/json'
-        'Authorization' = "Bearer $ApiKey"
-    }
+
+    # Windows PowerShell 5.1 用默认（非 UTF-8）编码序列化字符串型 -Body，
+    # 中文会被替换成 "?" 且不可恢复。改为显式传 UTF-8 字节数组。
+    # Content-Type 只能走 -ContentType，不能同时出现在 -Headers 里（5.1 会报重复）。
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+    $headers = @{ 'Authorization' = "Bearer $ApiKey" }
 
     try {
         $resp = Invoke-WebRequest -Uri $Url -Method Post -Headers $headers `
-            -Body $body -TimeoutSec 30 -UseBasicParsing
-        return [pscustomobject]@{ Query = $Query; Ok = $true; Content = $resp.Content }
+            -ContentType 'application/json; charset=utf-8' `
+            -Body $bodyBytes -TimeoutSec 30 -UseBasicParsing
+        # 反向同理：响应头常不带 charset，5.1 会按 ISO-8859-1 解码 $resp.Content，
+        # 把中文搜索结果也弄成乱码。直接从原始字节按 UTF-8 解。
+        $text = $null
+        try {
+            $text = [System.Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray())
+        } catch {
+            $text = $resp.Content
+        }
+        return [pscustomobject]@{ Query = $Query; Ok = $true; Content = $text }
     } catch {
         # 尝试读取错误响应体
         $detail = $_.Exception.Message
