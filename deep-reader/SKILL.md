@@ -13,8 +13,19 @@ description: "Use this skill when the user wants to deeply read, analyze, or ext
 ### Step 1: 检测输入类型
 检查用户消息是否包含 URL：
 - **有 URL** → 立刻执行抓取脚本，解析返回的 JSON，提取 `title`、`url`、`content`、`content_length` 字段，进入模式 A
-  - **默认（macOS / Linux / Windows + Git Bash）**：`bash scripts/fetch_article.sh {{url}}` —— 纯 bash + curl + sed/awk/grep，**零外部语言运行时**（不依赖 Python / Node / Perl）
-  - **Windows 无 Git Bash**：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch_article.ps1 {{url}}` —— 纯 PowerShell，**零依赖**（仅依赖系统自带 PowerShell）
+  - **默认（macOS / Linux / Windows + Git Bash）**：把 JSON 落到系统临时目录（避免污染当前工作目录），再读取：
+    ```bash
+    bash scripts/fetch_article.sh "{{url}}" --output "${TMPDIR:-/tmp}/article.json"
+    # 然后用 python/jq/任意 JSON 解析器读 article.json 提取 title/content/content_length
+    ```
+  - **Windows 无 Git Bash**：落到 `$env:TEMP`（系统临时目录）：
+    ```powershell
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch_article.ps1 `
+        -Url "{{url}}" `
+        -Output (Join-Path $env:TEMP "article.json")
+    # 然后 ConvertFrom-Json 读取并提取字段
+    ```
+  - 两个脚本都是**零依赖**：.sh 用 bash + curl + sed/awk/grep（系统自带，不依赖 Python / Node / Perl）；.ps1 用系统自带 PowerShell
 - **无 URL，但有文章内容** → 已有上下文，继续分析
 - **无 URL，也无上下文** → 进入交互问答模式
 - **魔法指令**（`/ELI5` `/Challenge` `/Action` `/Graph` `/Deep`）→ 检查是否有上下文，有则执行对应操作
@@ -98,6 +109,15 @@ description: "Use this skill when the user wants to deeply read, analyze, or ext
 ## Resources
 
 ### scripts/
-- `fetch_article.py` - Fetch article content from URL (WeChat browser headers), convert to Markdown, output JSON: `{"title", "url", "content", "content_length"}`. `content_length` = 中文字符数 + 英文词数（字词数），统计于截断前。**首选**（质量最佳）。
-- `fetch_article.sh` - Unix / Git Bash 版（**零外部语言运行时**）。纯 bash + curl + sed/awk/grep，思路与 `.ps1` 完全对齐（参考 `.ps1` 说明）。不依赖 Python / Node / Perl。适用于 macOS / Linux / Windows + Git Bash 任意场景。调用：`bash scripts/fetch_article.sh <url>`。
-- `fetch_article.ps1` - Windows PowerShell 版（纯 PowerShell，**无需 bash / curl / Python / 任何第三方包**）。伪装微信浏览器抓取，输出相同 JSON 结构，`content` 为纯文本。适用于「Windows 无 Git Bash 且无 Python」环境。调用：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch_article.ps1 <url>`。
+- `fetch_article.sh` - Unix / Git Bash 版（**零外部语言运行时**）。纯 bash + curl + sed/awk/grep，思路与 `.ps1` 完全对齐（参考 `.ps1` 说明）。不依赖 Python / Node / Perl。适用于 macOS / Linux / Windows + Git Bash 任意场景。调用：`bash scripts/fetch_article.sh <url> [-o PATH] [-f json|markdown]`。
+- `fetch_article.ps1` - Windows PowerShell 版（纯 PowerShell，**无需 bash / curl / Python / 任何第三方包**）。伪装微信浏览器抓取，输出相同 JSON 结构，`content` 为纯文本。适用于「Windows 无 Git Bash 且无 Python」环境。调用：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch_article.ps1 -Url <url> [-Output PATH] [-Format json|markdown]`。
+
+两个脚本行为完全一致：
+
+| 场景 | 调用方式 |
+|---|---|
+| 默认：JSON 到 stdout（向后兼容） | `bash fetch_article.sh <url>` |
+| JSON 写入文件（替代 `> file.json`） | `bash fetch_article.sh <url> -o article.json` |
+| Markdown 写入文件（自动加 `# title` / 来源 / 字数 前缀） | `bash fetch_article.sh <url> -o article.md -f markdown` |
+
+> 写文件策略：deep-reader 默认把 JSON 落到 `${TMPDIR:-/tmp}/article.json`（系统临时目录），**不污染当前工作目录**。需要 markdown 格式时（如想直接喂给其他 markdown 工具），加 `-f markdown`。

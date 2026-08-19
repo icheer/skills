@@ -171,6 +171,7 @@ python {{INSkillDir}}/scripts/search.py search --question "..." --search-json '{
 用户提供 URL
     ↓
 scripts/fetch_article.sh（或 .ps1 回退版）
+   --output "${TMPDIR:-/tmp}/article.json"   # JSON 落到系统临时目录，不污染工作目录
     ↓
 提取 title / content / content_length
     ↓
@@ -187,9 +188,10 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 |------|---------------------|----------------------|
 | 依赖 | bash + curl + sed/awk/grep | PowerShell（系统自带） |
 | 外部语言运行时 | 无（不依赖 Python / Node / Perl） | 无（不依赖任何第三方包） |
-| 输出格式 | 纯文本 | 纯文本 |
+| 输出格式 | JSON 或 Markdown | JSON 或 Markdown |
 | 编码处理 | 自动检测 | 自动检测 |
 | 适用平台 | macOS / Linux / Windows + Git Bash | Windows PowerShell 5.1+ |
+| 参数 | `-o PATH`、`-f json\|markdown` | `-Output PATH`、`-Format json\|markdown` |
 
 抓取时自动处理：
 
@@ -504,8 +506,8 @@ Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3�
 ### 核心特性
 
 **智能语料采集**
-- **URL 输入** — 伪装微信浏览器 UA，绕过反爬检测，提取纯文本（无 HTML 噪音）
-- **关键词搜索** — 3-4 个正交查询并行搜索（Tavily），自动抓取 Top 5 高相关度结果
+- **URL 输入** — 伪装微信浏览器 UA，绕过反爬检测，直接生成 markdown 写入 `<workdir>/sources/<n>.md`（含 `# title` / 来源 / 字数 前缀）
+- **关键词搜索** — 3-4 个正交查询并行搜索（Tavily），自动抓取 Top 5 高相关度结果，**直接落盘到工作目录的 `sources/`**，无需 Python 中转
 - **自动补充** — URL 内容不足时，自动生成补充搜索查询
 
 **播客脚本生成**
@@ -575,14 +577,14 @@ TTS_API_KEY=your_tts_api_key_here              # 可选，仅当该 worker 启�
 
 | 组件 | 依赖 | 说明 |
 | --- | --- | --- |
-| `scripts/fetch_article.sh` | bash + curl + sed/awk/grep | macOS / Linux / Git Bash（零外部语言运行时） |
-| `scripts/fetch_article.ps1` | PowerShell（系统自带） | Windows 回退方案（零依赖） |
+| `scripts/fetch_article.sh` | bash + curl + sed/awk/grep | macOS / Linux / Git Bash；支持 `-o PATH` + `-f json\|markdown`，edge-tts-podcast 默认 `--output sources/<n>.md --format markdown` |
+| `scripts/fetch_article.ps1` | PowerShell（系统自带） | Windows 回退方案；支持 `-Output PATH` + `-Format json\|markdown`，行为与 `.sh` 完全一致 |
 | `scripts/tts.py` | 纯 Python（stdlib） | 无额外依赖，内置微软 TTS 调用链 |
 | `scripts/concat.py` | 纯 Python（stdlib） | 无额外依赖 |
 | `scripts/search.sh` | bash + curl | macOS / Linux / Git Bash |
 | `scripts/search.ps1` | PowerShell（系统自带） | Windows 回退方案 |
 
-所有 Python 脚本兼容 **Python 3.7+**。
+所有 Python 脚本兼容 **Python 3.7+**。两个抓取脚本都是**零外部语言运行时**（不需要 Python / Node / Perl）。
 
 ### 使用示例
 

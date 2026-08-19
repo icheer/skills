@@ -279,19 +279,24 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 **输入类型 C（URL）**：
 
 ```
-1. 调用 fetch_article 脚本（伪装微信浏览器，绕过常见反爬），把返回 JSON
-   中的 title / content 写入 <workdir>/sources/article.md：
+1. 调用 fetch_article 脚本（伪装微信浏览器，绕过常见反爬），
+   直接生成 markdown 写到 <workdir>/sources/article.md：
 
-   # Unix / Git Bash（curl + Python bs4；需 pip install beautifulsoup4）
-   bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" > /tmp/article.json
+   # 默认（macOS / Linux / Windows + Git Bash）
+   bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" \
+       --output "<workdir>/sources/article.md" --format markdown
 
-   # Windows PowerShell（纯 PowerShell，零第三方依赖）
-   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 "<url>" | Out-File -Encoding utf8 article.json
+   # Windows 无 Git Bash
+   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 `
+       -Url "<url>" `
+       -Output "<workdir>\sources\article.md" `
+       -Format markdown
 
-   # 读取 JSON → 提取 title / content → 写入 sources/article.md：
-   #   - 文件首行写 "# {title}"
-   #   - 第 3 行写 "来源: {url}"
-   #   - 之后是 content 原文
+   # 输出格式（自动）：
+   #   # {title}
+   #   来源: {url}
+   #   字数: {content_length}
+   #   {content}
 
 2. 读取 sources/article.md，简要总结文章核心观点（300字以内，写入 meta.md）
 3. 若内容不足（content_length < 300），自动生成2-3个补充搜索查询 → 执行 2.2
@@ -301,11 +306,19 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 
 | 环境 | 推荐脚本 | 依赖 |
 |---|---|---|
-| macOS / Linux | `fetch_article.sh` | bash + curl + Python 3 + bs4 |
+| macOS / Linux | `fetch_article.sh` | bash + curl + sed/awk/grep（系统自带，零外部语言运行时） |
 | Windows + Git Bash | `fetch_article.sh` | 同上 |
-| Windows + PowerShell（无 Git Bash / 无 Python） | `fetch_article.ps1` | **零依赖**（系统自带 PowerShell 即可） |
+| Windows + PowerShell（无 Git Bash） | `fetch_article.ps1` | **零依赖**（系统自带 PowerShell 即可） |
 
-两个脚本输出格式完全一致：`{"title", "url", "content", "content_length"}`。
+两个脚本参数与输出格式完全一致：
+- 必填：`<url>`
+- 可选：`-o/--output PATH`、`-f/--format json|markdown`
+- 默认行为（不传 `-o`）：JSON 输出到 stdout（向后兼容老调用方）
+- `-f markdown` 必须配合 `-o`（否则 markdown 含真换行，stdout 会破坏 shell 管道假设）
+
+两种格式对照：
+- **JSON**（机器读中间产物）：`{"title", "url", "content", "content_length"}`
+- **Markdown**（人读最终产物）：`# title` / `来源: url` / `字数: N` / 正文
 
 **输入类型 A/B（想法/关键词）**：
 
@@ -356,15 +369,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/searc
 
 **④ 结果处理**
 
-1. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article 脚本抓取并清洗：
+1. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article 脚本抓取并直接生成 markdown 写入 `<workdir>/sources/<n>.md`：
    ```bash
-   # Unix / Git Bash:
-   bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" > /tmp/<n>.json
+   # Unix / Git Bash（默认）
+   bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" \
+       --output "<workdir>/sources/<n>.md" --format markdown
 
-   # Windows PowerShell（零依赖）:
-   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 "<url>" | Out-File -Encoding utf8 /tmp/<n>.json
-
-   # 从 JSON 提取 title / content 写入 <workdir>/sources/<n>.md
+   # Windows PowerShell（零依赖）
+   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 `
+       -Url "<url>" `
+       -Output "<workdir>\sources\<n>.md" `
+       -Format markdown
    ```
 2. 每篇文章提取**核心信息摘要**（500字以内），附加到 `sources/{n}.md`
 3. 将搜索策略（含所选维度与语言比例的理由）和语料清单写入 `meta.md` 的
