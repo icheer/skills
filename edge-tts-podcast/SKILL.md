@@ -279,11 +279,33 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 **输入类型 C（URL）**：
 
 ```
-1. 调用 fetch_article.py 抓取并清洗为纯文本（伪装微信浏览器，绕过常见反爬）：
-   python {{INSkillDir}}/scripts/fetch_article.py <url> <workdir>/sources/article.md
+1. 调用 fetch_article 脚本（伪装微信浏览器，绕过常见反爬），把返回 JSON
+   中的 title / content 写入 <workdir>/sources/article.md：
+
+   # Unix / Git Bash（curl + Python bs4；需 pip install beautifulsoup4）
+   bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" > /tmp/article.json
+
+   # Windows PowerShell（纯 PowerShell，零第三方依赖）
+   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 "<url>" | Out-File -Encoding utf8 article.json
+
+   # 读取 JSON → 提取 title / content → 写入 sources/article.md：
+   #   - 文件首行写 "# {title}"
+   #   - 第 3 行写 "来源: {url}"
+   #   - 之后是 content 原文
+
 2. 读取 sources/article.md，简要总结文章核心观点（300字以内，写入 meta.md）
 3. 若内容不足（content_length < 300），自动生成2-3个补充搜索查询 → 执行 2.2
 ```
+
+**脚本选型指南**：
+
+| 环境 | 推荐脚本 | 依赖 |
+|---|---|---|
+| macOS / Linux | `fetch_article.sh` | bash + curl + Python 3 + bs4 |
+| Windows + Git Bash | `fetch_article.sh` | 同上 |
+| Windows + PowerShell（无 Git Bash / 无 Python） | `fetch_article.ps1` | **零依赖**（系统自带 PowerShell 即可） |
+
+两个脚本输出格式完全一致：`{"title", "url", "content", "content_length"}`。
 
 **输入类型 A/B（想法/关键词）**：
 
@@ -334,9 +356,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/searc
 
 **④ 结果处理**
 
-1. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article.py 抓取并清洗：
+1. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article 脚本抓取并清洗：
    ```bash
-   python {{INSkillDir}}/scripts/fetch_article.py <url> <workdir>/sources/<n>.md
+   # Unix / Git Bash:
+   bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" > /tmp/<n>.json
+
+   # Windows PowerShell（零依赖）:
+   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 "<url>" | Out-File -Encoding utf8 /tmp/<n>.json
+
+   # 从 JSON 提取 title / content 写入 <workdir>/sources/<n>.md
    ```
 2. 每篇文章提取**核心信息摘要**（500字以内），附加到 `sources/{n}.md`
 3. 将搜索策略（含所选维度与语言比例的理由）和语料清单写入 `meta.md` 的

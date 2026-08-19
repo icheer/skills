@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env pwsh
 # =============================================================================
-# Deep Reader — 文章抓取脚本（Windows PowerShell 版，零依赖）
+# Edge TTS Podcast — 文章抓取脚本（Windows PowerShell 版，零依赖）
 # =============================================================================
 # 为「没有 Git Bash、也没有 Python bs4」的 Windows 用户提供的纯 PowerShell
 # 实现。仅依赖系统自带的 PowerShell（Windows PowerShell 5.1 或 PowerShell 7+），

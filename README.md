@@ -170,7 +170,7 @@ python {{INSkillDir}}/scripts/search.py search --question "..." --search-json '{
 ```
 用户提供 URL
     ↓
-scripts/fetch_article.py（或 .sh 回退版）
+scripts/fetch_article.sh（或 .ps1 回退版）
     ↓
 提取 title / content / content_length
     ↓
@@ -181,14 +181,15 @@ Sage（认知增强型阅读专家）→ 完整分析报告
 
 ### 核心能力
 
-**抓取引擎**（`fetch_article.py` / `fetch_article.sh`）
+**抓取引擎**（`fetch_article.sh` / `fetch_article.ps1`）
 
-| 特性 | `fetch_article.py` | `fetch_article.sh` |
-|------|-------------------|---------------------|
-| 依赖 | requests + BeautifulSoup + markdownify | curl + Python + BeautifulSoup |
-| 输出格式 | 完整 Markdown | 纯文本 |
-| 编码处理 | 自动检测（含混合编码兜底） | 自动检测 |
-| 回退方案 | 依赖安装失败时自动调 | 自动调用 |
+| 特性 | `fetch_article.sh` | `fetch_article.ps1` |
+|------|---------------------|----------------------|
+| 依赖 | bash + curl + sed/awk/grep | PowerShell（系统自带） |
+| 外部语言运行时 | 无（不依赖 Python / Node / Perl） | 无（不依赖任何第三方包） |
+| 输出格式 | 纯文本 | 纯文本 |
+| 编码处理 | 自动检测 | 自动检测 |
+| 适用平台 | macOS / Linux / Windows + Git Bash | Windows PowerShell 5.1+ |
 
 抓取时自动处理：
 
@@ -574,7 +575,8 @@ TTS_API_KEY=your_tts_api_key_here              # 可选，仅当该 worker 启�
 
 | 组件 | 依赖 | 说明 |
 | --- | --- | --- |
-| `scripts/fetch_article.py` | requests + beautifulsoup4 | 自动安装 |
+| `scripts/fetch_article.sh` | bash + curl + sed/awk/grep | macOS / Linux / Git Bash（零外部语言运行时） |
+| `scripts/fetch_article.ps1` | PowerShell（系统自带） | Windows 回退方案（零依赖） |
 | `scripts/tts.py` | 纯 Python（stdlib） | 无额外依赖，内置微软 TTS 调用链 |
 | `scripts/concat.py` | 纯 Python（stdlib） | 无额外依赖 |
 | `scripts/search.sh` | bash + curl | macOS / Linux / Git Bash |

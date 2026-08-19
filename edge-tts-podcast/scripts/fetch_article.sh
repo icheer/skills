@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Deep Reader — 文章抓取脚本（Unix / Git Bash 版，零外部语言运行时）
+# Edge TTS Podcast — 文章抓取脚本（Unix / Git Bash 版，零外部语言运行时）
 # =============================================================================
 # 纯 bash + curl + 标准 POSIX 工具实现，与 fetch_article.ps1 完全对齐：
 #   .ps1: HttpWebRequest 抓取 + regex 解析 + WebUtility.HtmlDecode 解码
