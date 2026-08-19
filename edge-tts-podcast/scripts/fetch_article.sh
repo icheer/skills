@@ -161,7 +161,7 @@ HEX_RAW=$(grep -oE "content_noencode[[:space:]]*:[[:space:]]*JsDecode[[:space:]]
 if [ -n "$HEX_RAW" ]; then
   # printf '%b' 解释 \xNN 转义为实际字节（对应 .ps1 的 MemoryStream + WriteByte）
   CONTENT_HTML=$(printf '%b' "$HEX_RAW")
-elif grep -qiE '(id|class)=["'"'"'][^"'"'"']*(rich_media_content|img-content|article-content|post-content|mw-content-text|bodyContent|content_block_0|posts-expand|content-wrap)' "$TMPHTML" 2>/dev/null; then
+elif grep -qiE '(id|class)=["'"'"'][^"'"'"']*(rich_media_content|article-content|post-content|mw-content-text|bodyContent|content_block_0|posts-expand|content-wrap)' "$TMPHTML" 2>/dev/null; then
   # 注意：匹配从第一个出现的容器开始（content-wrap > content > posts-expand 嵌套关系），
   # 提取到的 HTML 包含整个嵌套区域——满足 Hexo 列表页 / 文章详情页的需求。
   # 同时支持 <div> 和 <section>（Hexo 列表用 <section class="posts-expand">）。

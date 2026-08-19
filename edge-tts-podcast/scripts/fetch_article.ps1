@@ -184,7 +184,7 @@ try {
     $wechat = Get-WechatContent $html
     if ($wechat) {
         $fragment = $wechat
-    } elseif ($html -match '(?is)<(?:div|section)[^>]*(?:id|class)=["''][^"'']*(?:rich_media_content|img-content|article-content|post-content|mw-content-text|bodyContent|content_block_0|posts-expand|content-wrap)[^"'']*["''][^>]*>(.*)</(?:div|section)>') {
+    } elseif ($html -match '(?is)<(?:div|section)[^>]*(?:id|class)=["''][^"'']*(?:rich_media_content|article-content|post-content|mw-content-text|bodyContent|content_block_0|posts-expand|content-wrap)[^"'']*["''][^>]*>(.*)</(?:div|section)>') {
         # 容器名表：rich_media_content/.../post-content 是微信/公众号/WordPress 等；
         # posts-expand/content-wrap 是 Hexo 主题默认容器（同时支持 <div> 和 <section>）。
         $fragment = $matches[1]
