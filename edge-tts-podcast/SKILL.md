@@ -70,7 +70,7 @@ TTS 后端由 `tts.py` 自动选择：
 {yyyy-MM-dd}_{topic}/
 ├── meta.md              # 播客元信息（随引导阶段逐步更新）
 ├── lines.csv            # 播客文字稿（tab分隔，见下方格式说明）
-├── sources/             # 语料文件（article.md / 1.md / 2.md …）
+├── sources/             # 可追溯语料（Tavily 原始结果、文章正文、研究笔记）
 ├── voices/              # 逐行音频产物（1.mp3 / 2.mp3 …）
 └── podcast.mp3          # 最终拼合产物（Phase 5 生成）
 ```
@@ -362,14 +362,23 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 每个查询 `num_results=6`，控制总条目 ≤ 24：
 
 ```bash
-bash {{INSkillDir}}/scripts/search.sh --num-results 6 "query1" "query2" "query3"
+# `tee` 会将 Tavily 原始返回同时展示并保存；不得省略该步骤。
+bash {{INSkillDir}}/scripts/search.sh --num-results 6 "query1" "query2" "query3" \
+  | tee "<workdir>/sources/tavily-search-results.txt"
 # Windows PowerShell:
-powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 -NumResults 6 "query1" "query2" "query3"
+powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 `
+    -NumResults 6 "query1" "query2" "query3" `
+    | Set-Content -Encoding utf8 "<workdir>\sources\tavily-search-results.txt"
 ```
+
+`sources/tavily-search-results.txt` 是本次检索的**最低限度、必需的可复用证据**：
+它保留原始 URL、标题、摘要、相关度与 Tavily 回答，供后续审阅、重写脚本及跨会话续作使用。
+即使 Agent 已从终端输出中获得足够信息，也仍未完成“收集”——必须先执行上述带落盘的命令。
 
 **④ 结果处理**
 
-1. 从搜索结果中选取 **相关度 ≥ 0.7 的前5条**，用 fetch_article 脚本抓取并直接生成 markdown 写入 `<workdir>/sources/<n>.md`：
+1. 阅读已落盘的 `sources/tavily-search-results.txt`，从中选取 **相关度 ≥ 0.7 的 3-5 条**。优先抓取能支撑关键事实、数据或分歧观点的来源；不必为了凑数量抓取内容农场、重复转述或无法访问页面。
+2. 用 fetch_article 脚本抓取所选文章，直接生成 markdown 写入 `<workdir>/sources/<n>.md`：
    ```bash
    # Unix / Git Bash（默认）
    bash {{INSkillDir}}/scripts/fetch_article.sh "<url>" \
@@ -381,8 +390,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/searc
        -Output "<workdir>\sources\<n>.md" `
        -Format markdown
    ```
-2. 每篇文章提取**核心信息摘要**（500字以内），附加到 `sources/{n}.md`
-3. 将搜索策略（含所选维度与语言比例的理由）和语料清单写入 `meta.md` 的
+   若某个页面抓取失败，保留已存在的 Tavily 原始条目，在 `sources/research-notes.md` 中注明失败原因，然后换用下一条候选来源；不要因此删除检索证据或阻塞整个任务。
+3. 创建并写入 `sources/research-notes.md`。按以下格式列出实际会用于脚本的论点；每个事实性条目必须标注其来源文件和 URL，避免 Phase 3 只能依赖对终端输出的短期记忆：
+   ```markdown
+   # 语料研究笔记
+
+   ## 将用于脚本的论点
+   - 论点/数据：…
+     - 依据：`1.md` — https://example.com/article
+     - 使用方式：背景/数据/不同观点/反问
+
+   ## 未采用或抓取失败的候选
+   - https://example.com/…：重复、相关度不足或抓取失败（原因）。
+   ```
+4. 将搜索策略（含所选维度与语言比例的理由）和语料清单写入 `meta.md` 的
    "搜索策略"和"主要语料"章节
 
 **2.3 语料质量检查**
@@ -392,7 +413,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/searc
 - 不同视角/来源至少2个
 - 若语料严重不足，额外补充1-2次搜索
 
-Phase 2 完成后，更新 `meta.md` 中的 Phase 2 复选框，告知用户已完成语料收集，准备生成文字稿。
+**Phase 2 退出门槛（Phase 3 的前置条件）**
+
+在标记 Phase 2 完成前，逐项确认：
+
+- [ ] `sources/tavily-search-results.txt` 已存在且非空（URL 输入直接抓取时，至少存在 `sources/article.md`）
+- [ ] `sources/research-notes.md` 已存在且至少列出 3 条将用于脚本的论点；URL 输入且无需补充搜索时，也必须为原文写此笔记
+- [ ] 已抓取至少 2 篇高价值页面，**或**在研究笔记中说明为何只能依赖原文/Tavily 摘要（例如页面受限、主题缺乏一手长文）
+- [ ] `meta.md` 已更新搜索策略、语料清单和 Phase 2 勾选状态
+
+搜索结果显示在当前对话或终端中，**不等于**完成语料收集；在以上文件没有写入并核对前，
+不得宣称“语料已充分”、不得勾选 Phase 2，也不得进入 Phase 3。通过门槛后，告知用户已完成语料收集，准备生成文字稿。
 
 ---
 
@@ -400,7 +431,9 @@ Phase 2 完成后，更新 `meta.md` 中的 Phase 2 复选框，告知用户已�
 
 **执行时机**：Phase 2 完成后。
 
-**目标**：基于语料生成高质量、自然流畅的播客对话脚本，输出为 `lines.csv`。
+**目标**：基于已落盘、可追溯的语料生成高质量、自然流畅的播客对话脚本，输出为 `lines.csv`。
+
+**开始前检查**：先读取 `sources/research-notes.md`，以其中已标注来源的论点作为脚本依据。仅在需要核对具体数据、引文、归因或补足上下文时，按需读取 `sources/tavily-search-results.txt` 或对应单篇文章的相关片段；不得一次性全文读取全部原始搜索结果及文章正文。若 Phase 2 的退出门槛未满足，返回 Phase 2 补齐产物；不能以对话记忆或终端摘要代替。
 
 **3.1 加载主提示词**
 
