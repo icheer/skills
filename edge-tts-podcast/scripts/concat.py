@@ -3,7 +3,8 @@
 Edge TTS Podcast — Audio Concatenation Script
 
 Concatenates all voices/{n}.mp3 files in a podcast workdir into a single
-podcast.mp3, inserting silence between each segment.
+podcast.mp3, inserting silence between each segment. Also exports a readable
+transcript.md from lines.csv after a successful concatenation.
 
 Usage:
   python concat.py <workdir>                        # default 500ms silence
@@ -29,6 +30,7 @@ import os
 import sys
 import glob
 import re
+import csv
 
 # ---------------------------------------------------------------------------
 # Workdir validation
@@ -115,6 +117,116 @@ def find_silence_file(silence_ms: int) -> str | None:
     if os.path.isfile(candidate):
         return candidate
     return None
+
+
+# ---------------------------------------------------------------------------
+# Transcript export
+# ---------------------------------------------------------------------------
+
+# Keep the body of transcript.md readable. The full Edge voice IDs remain in
+# the speaker list at the top, so the compact labels do not lose traceability.
+VOICE_DISPLAY_NAMES = {
+    "zh-CN-YunyangNeural": "云扬",
+    "zh-CN-YunxiNeural": "云希",
+    "zh-CN-XiaoxiaoNeural": "晓晓",
+    "zh-CN-XiaohanNeural": "晓涵",
+    "zh-CN-XiaomoNeural": "晓墨",
+    "zh-CN-YunjianNeural": "云健",
+    "zh-CN-YunxiaNeural": "云夏",
+    "zh-CN-XiaoyiNeural": "晓伊",
+    "zh-CN-liaoning-XiaobeiNeural": "晓北",
+    "zh-CN-shaanxi-XiaoniNeural": "晓妮",
+    "zh-HK-HiuGaaiNeural": "晓佳",
+    "zh-HK-HiuMaanNeural": "晓曼",
+    "zh-HK-WanLungNeural": "云龙",
+    "zh-TW-HsiaoChenNeural": "晓臻",
+    "zh-TW-HsiaoYuNeural": "晓雨",
+    "zh-TW-YunJheNeural": "云哲",
+}
+
+
+def normalize_transcript_text(text: str) -> str:
+    """Collapse accidental line breaks while preserving a readable paragraph."""
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def export_transcript(workdir: str) -> str | None:
+    """Export lines.csv as transcript.md without affecting audio output.
+
+    Speaker labels use a familiar localized voice name where available. Unknown
+    voices are assigned stable ``说话人 N`` labels in first-appearance order,
+    while their complete voice IDs are retained in the Markdown speaker list.
+    Any malformed or unreadable CSV is reported as a warning and deliberately
+    does not turn a successfully rendered podcast into a failed run.
+    """
+    csv_path = os.path.join(workdir, "lines.csv")
+    output_path = os.path.join(workdir, "transcript.md")
+
+    if not os.path.isfile(csv_path):
+        print(f"[警告] 未找到 lines.csv，跳过文字稿导出: {csv_path}")
+        return None
+
+    try:
+        with open(csv_path, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f, delimiter="\t"))
+    except (OSError, csv.Error, UnicodeError) as error:
+        print(f"[警告] 无法读取 lines.csv，跳过文字稿导出: {error}")
+        return None
+
+    entries = []
+    speaker_labels = {}
+    used_labels = set()
+    unknown_speaker_count = 0
+
+    for row in rows:
+        content = normalize_transcript_text(row.get("content", ""))
+        voice_id = (row.get("voice_id") or "").strip()
+        if not content:
+            continue
+
+        # A missing voice ID should remain visible instead of silently being
+        # attributed to another speaker.
+        speaker_key = voice_id or "__missing_voice_id__"
+        if speaker_key not in speaker_labels:
+            label = VOICE_DISPLAY_NAMES.get(voice_id)
+            if not label:
+                unknown_speaker_count += 1
+                label = f"说话人 {unknown_speaker_count}"
+            base_label = label
+            suffix = 2
+            while label in used_labels:
+                label = f"{base_label} {suffix}"
+                suffix += 1
+            speaker_labels[speaker_key] = label
+            used_labels.add(label)
+
+        entries.append((speaker_key, content))
+
+    if not entries:
+        print("[警告] lines.csv 中没有可导出的 content，跳过文字稿导出")
+        return None
+
+    try:
+        with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("# 播客文字稿\n\n")
+            f.write(
+                "> 此文件由 `lines.csv` 自动生成；音频拼合成功后导出。"
+                "说话人名称为便于阅读的简写，完整音色 ID 见下方。\n\n"
+            )
+            f.write("## 说话人\n\n")
+            for speaker_key, label in speaker_labels.items():
+                voice_description = speaker_key if speaker_key != "__missing_voice_id__" else "未填写 voice_id"
+                f.write(f"- **{label}**：`{voice_description}`\n")
+
+            f.write("\n## 正文\n\n")
+            for speaker_key, content in entries:
+                f.write(f"**{speaker_labels[speaker_key]}：** {content}\n\n")
+    except OSError as error:
+        print(f"[警告] 无法写入文字稿，音频已保留: {error}")
+        return None
+
+    print(f"[完成] 文字稿: {output_path}  ({len(entries)} 行)")
+    return output_path
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +348,9 @@ def main():
 
     print(f"[INFO] 开始拼合 → {output_path}")
     concat_mp3_files(voice_files, silence_path, output_path)
+    # Text export is deliberately best-effort: it must not invalidate an
+    # already completed audio render when lines.csv is absent or malformed.
+    export_transcript(workdir)
 
 
 if __name__ == "__main__":

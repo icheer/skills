@@ -70,6 +70,7 @@ TTS 后端由 `tts.py` 自动选择：
 {yyyy-MM-dd}_{topic}/
 ├── meta.md              # 播客元信息（随引导阶段逐步更新）
 ├── lines.csv            # 播客文字稿（tab分隔，见下方格式说明）
+├── transcript.md        # 便于阅读的文字稿（Phase 5 自动从 lines.csv 导出）
 ├── sources/             # 可追溯语料（Tavily 原始结果、文章正文、研究笔记）
 ├── voices/              # 逐行音频产物（1.mp3 / 2.mp3 …）
 └── podcast.mp3          # 最终拼合产物（Phase 5 生成）
@@ -509,7 +510,7 @@ Phase 4 完成后，告知用户"所有音频片段已生成，共 N 个文件"�
 
 **执行时机**：Phase 4 完成后。
 
-**目标**：将所有 `voices/*.mp3` 按顺序拼合为完整的 `podcast.mp3`，行间插入静音。
+**目标**：将所有 `voices/*.mp3` 按顺序拼合为完整的 `podcast.mp3`，行间插入静音。拼合成功后，脚本还会尽力从 `lines.csv` 导出 `transcript.md`：正文使用“云希”“晓晓”等简短说话人名称；未知音色则按首次出现顺序标为“说话人 1 / 2 / 3”，完整 `voice_id` 保留在文件开头的说话人对照表中。文字稿导出失败只会给出警告，不影响已生成的音频。
 
 **5.1 执行拼合**
 
@@ -524,6 +525,7 @@ python {{INSkillDir}}/scripts/concat.py <workdir> --silence 500
 **5.2 完成**
 
 - 告知用户输出文件路径和文件大小
+- 同时告知 `transcript.md` 的输出路径（若文字稿导出成功）
 - 更新 `meta.md` 中的 Phase 5 复选框
 - 输出总结：
   ```
