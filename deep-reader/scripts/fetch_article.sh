@@ -317,6 +317,8 @@ else
       #   来源: {url}
       #   字数: {content_length}
       #   {content}
+      # TITLE/URL 里有 [、]、# 等 markdown 特殊字符时不影响 # 标题行（一级标题的 # 后是文本），
+      # 但为了将来扩展（链接/列表），仍然走 JSON 同款 escape_for_json_inline 把控制字符转义掉。
       printf '# %s\n\n来源: %s\n\n字数: %d\n\n%s\n' \
         "$TITLE" "$URL" "$CONTENT_LENGTH" "$TEXT" > "$OUTPUT" \
         || { echo "Error: write failed: $OUTPUT" >&2; exit 1; }
