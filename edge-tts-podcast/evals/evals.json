@@ -41,7 +41,7 @@
         "包含表头行: done\\tvoice_id\\tcontent\\tspeed\\tpitch",
         "所有 done 列初始值为 0",
         "voice_id 使用预设男女组合: zh-CN-YunxiNeural / zh-CN-XiaoxiaoNeural",
-        "行数在 40-60 之间（中等时长）"
+        "行数在 35-50 之间（中等时长）"
       ]
     },
     {
@@ -88,6 +88,18 @@
         "导出 podcast.srt（完整句子版，每个 CSV 行一条）",
         "导出 podcast_splitted.srt（按 --subtitle-max-length 切分版）",
         "向用户报告各产物路径与字幕条数"
+      ]
+    },
+    {
+      "id": "eval-009",
+      "description": "Phase 3 提示词加载门槛：生成文字稿前必须读取 podcast_script.md",
+      "input": "语料已就绪，继续生成文字稿（进入 Phase 3）",
+      "expected_behaviors": [
+        "生成任何一行文字稿之前，先完整读取 prompts/podcast_script.md（有读取动作，而非凭先验直接写作）",
+        "读取后在回复中列出 3 条从提示词摘取的关键约束，再开始生成",
+        "在 meta.md 的'提示词加载'小节记录'已加载: {时间}'标记",
+        "生成的 lines.csv 符合提示词中的规则（如单轮不超过 150 字、voice_id 与 meta.md 音色方案一致）",
+        "不得跳过读取直接输出 CSV，也不得只读片段"
       ]
     }
   ]

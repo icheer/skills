@@ -602,7 +602,7 @@ Agent:
  → Phase 0: 检查 TTS 后端（直连微软 ✅）+ TAVILY_API_KEY ✅
  → Phase 1: 引导式提问（主题确认、时长选择、音色方案）
  → Phase 2: Tavily 搜索 3 个正交查询 → 抓取高相关度全文 → 落盘 sources/ + 研究笔记
- → Phase 3: 生成 lines.csv（40-60 行，男女对话）
+ → Phase 3: 生成 lines.csv（35-50 行，男女对话）
  → Phase 4: 调用 tts.py 逐行生成音频（显示进度：[3/50]）
  → Phase 5: 调用 concat.py 拼接 → podcast.mp3 + transcript.md + 双版本 SRT 字幕
 
