@@ -37,6 +37,24 @@ import glob
 import re
 import csv
 
+
+# ---------------------------------------------------------------------------
+# Safe print for mixed-encoding environments
+# ---------------------------------------------------------------------------
+
+def safe_print(text):
+    """Print text, gracefully downgrading Unicode on encoding errors.
+
+    Same wrapper as tts.py: Windows GBK consoles (or redirected stdout using
+    the system code page) cannot encode ✓/✗ and some Chinese punctuation.
+    Catches UnicodeEncodeError and retries with ASCII-safe fallbacks.
+    """
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        fallback = text.replace("✓", "[OK]").replace("✗", "[X]")
+        print(fallback.encode(sys.stdout.encoding or "utf-8", "replace").decode(sys.stdout.encoding or "utf-8", "ignore"))
+
 # 默认的逐条字幕最大可见单位数。中文按单字、英文按单词计；可直接修改本
 # 常量以调试观看节奏，也可以通过 --subtitle-max-length 在单次运行时覆盖。
 DEFAULT_SUBTITLE_MAX_UNITS = 40
@@ -44,6 +62,36 @@ DEFAULT_SUBTITLE_MAX_UNITS = 40
 # 按 DEFAULT_SUBTITLE_MAX_UNITS 切分的字幕使用该文件名；完整句子版固定
 # 使用标准文件名 podcast.srt，适合严肃阅读、检索与校对。
 SPLITTED_SRT_FILENAME = "podcast_splitted.srt"
+
+
+# ---------------------------------------------------------------------------
+# meta.md progress ticking (best-effort)
+# ---------------------------------------------------------------------------
+
+def check_meta_phase(workdir: str, phase_label: str) -> None:
+    """Tick a phase checkbox in meta.md (e.g. 'Phase 5: 音频拼合').
+
+    Mirrors tts.py's helper: missing meta.md or unmatched label is silently
+    ignored; only unticked boxes matching the label prefix get ticked.
+    """
+    meta_path = os.path.join(workdir, "meta.md")
+    if not os.path.isfile(meta_path):
+        return
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            content = f.read()
+        pattern = re.compile(r"(- \[ \] )(Phase \d+[^\n]*)")
+        def _tick(match):
+            label = match.group(2)
+            if label.startswith(phase_label):
+                return f"- [x] {label}"
+            return match.group(0)
+        new_content = pattern.sub(_tick, content)
+        if new_content != content:
+            with open(meta_path, "w", encoding="utf-8", newline="") as f:
+                f.write(new_content)
+    except OSError:
+        pass  # Non-critical
 
 # ---------------------------------------------------------------------------
 # Workdir validation
@@ -54,16 +102,16 @@ def validate_workdir(workdir_arg: str) -> str:
     workdir = os.path.abspath(workdir_arg)
     dirname = os.path.basename(workdir)
     if not re.match(r'^\d{4}-\d{2}-\d{2}_', dirname):
-        print(f"[警告] 工作目录命名不符合技能约定（应为 YYYY-MM-DD_topic）: {dirname}")
-        print(f"       当前路径: {workdir}")
+        safe_print(f"[警告] 工作目录命名不符合技能约定（应为 YYYY-MM-DD_topic）: {dirname}")
+        safe_print(f"       当前路径: {workdir}")
 
     # concat.py 只验证目录存在，不负责创建（创建应由 tts.py 或 agent 在 Phase 1 完成）
     if not os.path.isdir(workdir):
-        print(f"[FATAL] 工作目录不存在: {workdir}")
-        print(f"       请确认路径正确，或先运行 tts.py 创建目录结构。")
+        safe_print(f"[FATAL] 工作目录不存在: {workdir}")
+        safe_print(f"       请确认路径正确，或先运行 tts.py 创建目录结构。")
         sys.exit(1)
 
-    print(f"[INFO] 工作目录（已规范化）: {workdir}")
+    safe_print(f"[INFO] 工作目录（已规范化）: {workdir}")
     return workdir
 
 # ---------------------------------------------------------------------------
@@ -154,7 +202,7 @@ def get_mp3_duration(path: str) -> tuple[float, int] | None:
         with open(path, "rb") as f:
             data = f.read()
     except OSError as error:
-        print(f"[警告] 无法读取 MP3 时长: {path}: {error}")
+        safe_print(f"[警告] 无法读取 MP3 时长: {path}: {error}")
         return None
 
     data = strip_id3v1(strip_id3v2(data))
@@ -215,7 +263,7 @@ def get_mp3_duration(path: str) -> tuple[float, int] | None:
         offset += frame_length
 
     if not frame_count:
-        print(f"[警告] 未从 MP3 中识别到有效音频帧，无法计算时长: {path}")
+        safe_print(f"[警告] 未从 MP3 中识别到有效音频帧，无法计算时长: {path}")
         return None
     return duration, frame_count
 
@@ -264,14 +312,14 @@ def export_transcript(workdir: str) -> str | None:
     output_path = os.path.join(workdir, "transcript.md")
 
     if not os.path.isfile(csv_path):
-        print(f"[警告] 未找到 lines.csv，跳过文字稿导出: {csv_path}")
+        safe_print(f"[警告] 未找到 lines.csv，跳过文字稿导出: {csv_path}")
         return None
 
     try:
         with open(csv_path, encoding="utf-8-sig", newline="") as f:
             rows = list(csv.DictReader(f, delimiter="\t"))
     except (OSError, csv.Error, UnicodeError) as error:
-        print(f"[警告] 无法读取 lines.csv，跳过文字稿导出: {error}")
+        safe_print(f"[警告] 无法读取 lines.csv，跳过文字稿导出: {error}")
         return None
 
     entries = []
@@ -304,7 +352,7 @@ def export_transcript(workdir: str) -> str | None:
         entries.append((speaker_key, content))
 
     if not entries:
-        print("[警告] lines.csv 中没有可导出的 content，跳过文字稿导出")
+        safe_print("[警告] lines.csv 中没有可导出的 content，跳过文字稿导出")
         return None
 
     try:
@@ -323,10 +371,10 @@ def export_transcript(workdir: str) -> str | None:
             for speaker_key, content in entries:
                 f.write(f"**{speaker_labels[speaker_key]}：** {content}\n\n")
     except OSError as error:
-        print(f"[警告] 无法写入文字稿，音频已保留: {error}")
+        safe_print(f"[警告] 无法写入文字稿，音频已保留: {error}")
         return None
 
-    print(f"[完成] 文字稿: {output_path}  ({len(entries)} 行)")
+    safe_print(f"[完成] 文字稿: {output_path}  ({len(entries)} 行)")
     return output_path
 
 
@@ -414,16 +462,59 @@ def format_srt_timestamp(seconds: float) -> str:
 
 
 def _read_subtitle_rows(workdir: str) -> list[dict] | None:
-    """Read CSV rows for subtitle generation without making audio fail."""
+    """Read CSV rows for subtitle generation without making audio fail.
+
+    Same structural rules as tts.py: header must contain done/voice_id/content
+    (speed/pitch optional), and every data row must provide at least those 3
+    fields. Malformed rows are dropped with a warning; if ALL rows are bad the
+    export is skipped — audio concatenation itself is never affected.
+    """
     csv_path = os.path.join(workdir, "lines.csv")
     if not os.path.isfile(csv_path):
-        print(f"[警告] 未找到 lines.csv，跳过字幕导出: {csv_path}")
+        safe_print(f"[警告] 未找到 lines.csv，跳过字幕导出: {csv_path}")
         return None
     try:
         with open(csv_path, encoding="utf-8-sig", newline="") as f:
-            return list(csv.DictReader(f, delimiter="\t"))
+            reader = csv.DictReader(f, delimiter="\t")
+            if not reader.fieldnames:
+                safe_print(f"[警告] lines.csv 为空或缺少表头，跳过字幕导出")
+                return None
+            required = ("done", "voice_id", "content")
+            missing_cols = [c for c in required if c not in reader.fieldnames]
+            if missing_cols:
+                safe_print(f"[警告] lines.csv 表头缺少必需列 {missing_cols}，跳过字幕导出")
+                return None
+
+            rows = []
+            dropped = 0
+            for row in reader:
+                # Extra fields land under the None key → stray Tab in content.
+                if None in row or any(row.get(c) is None for c in required):
+                    dropped += 1
+                    continue
+                # Column-shift detection: text landing in speed/pitch means a
+                # stray Tab inside content (row still has exactly 5 fields).
+                shifted = False
+                for col in ("speed", "pitch"):
+                    val = (row.get(col) or "").strip()
+                    if val:
+                        try:
+                            float(val)
+                        except ValueError:
+                            dropped += 1
+                            shifted = True
+                            break
+                if shifted:
+                    continue
+                for col in ("speed", "pitch"):
+                    if row.get(col) is None:
+                        row[col] = ""
+                rows.append(row)
+            if dropped:
+                safe_print(f"[警告] lines.csv 有 {dropped} 行字段数异常（content 混入 Tab/换行?），已跳过这些行的字幕")
+            return rows or None
     except (OSError, csv.Error, UnicodeError) as error:
-        print(f"[警告] 无法读取 lines.csv，跳过字幕导出: {error}")
+        safe_print(f"[警告] 无法读取 lines.csv，跳过字幕导出: {error}")
         return None
 
 
@@ -444,7 +535,7 @@ def export_srt(workdir: str, voice_files: list, silence_path: str | None,
     if rows is None:
         return None
     if max_units is not None and max_units < 1:
-        print(f"[警告] 字幕长度阈值必须大于 0，跳过字幕导出: {max_units}")
+        safe_print(f"[警告] 字幕长度阈值必须大于 0，跳过字幕导出: {max_units}")
         return None
 
     numbered_files = {}
@@ -461,7 +552,7 @@ def export_srt(workdir: str, voice_files: list, silence_path: str | None,
         if parsed_silence:
             silence_duration = parsed_silence[0]
         else:
-            print("[警告] 无法测量静音片段，字幕将不计入行间静音")
+            safe_print("[警告] 无法测量静音片段，字幕将不计入行间静音")
 
     subtitles = []
     timeline = 0.0
@@ -472,12 +563,12 @@ def export_srt(workdir: str, voice_files: list, silence_path: str | None,
         voice_path = numbered_files.get(row_index)
         if not content or not voice_path:
             if content and not voice_path:
-                print(f"[警告] 缺少 voices/{row_index}.mp3，已跳过该行字幕")
+                safe_print(f"[警告] 缺少 voices/{row_index}.mp3，已跳过该行字幕")
             continue
 
         parsed_duration = get_mp3_duration(voice_path)
         if not parsed_duration:
-            print(f"[警告] 无法测量 voices/{row_index}.mp3，已跳过该行字幕")
+            safe_print(f"[警告] 无法测量 voices/{row_index}.mp3，已跳过该行字幕")
             continue
         voice_duration = parsed_duration[0]
         # The full-text variant keeps one source row as one subtitle so it
@@ -502,7 +593,7 @@ def export_srt(workdir: str, voice_files: list, silence_path: str | None,
             timeline += silence_duration
 
     if not subtitles:
-        print("[警告] 没有可导出的字幕内容，跳过 SRT 导出")
+        safe_print("[警告] 没有可导出的字幕内容，跳过 SRT 导出")
         return None
 
     output_path = os.path.join(workdir, output_filename)
@@ -511,10 +602,10 @@ def export_srt(workdir: str, voice_files: list, silence_path: str | None,
             for index, (start, end, text) in enumerate(subtitles, 1):
                 f.write(f"{index}\n{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\n{text}\n\n")
     except OSError as error:
-        print(f"[警告] 无法写入 SRT 字幕，音频已保留: {error}")
+        safe_print(f"[警告] 无法写入 SRT 字幕，音频已保留: {error}")
         return None
 
-    print(
+    safe_print(
         f"[完成] SRT 字幕: {output_path}  ({len(subtitles)} 条，"
         f"{usable_row_count}/{total_rows} 行音频，时长 {timeline:.3f}s)"
     )
@@ -555,7 +646,7 @@ def concat_mp3_files(voice_files: list, silence_path: str | None,
     else:
         size_str = f"{size_kb:.0f} KB"
 
-    print(f"[完成] 输出文件: {output_path}  ({size_str})")
+    safe_print(f"[完成] 输出文件: {output_path}  ({size_str})")
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +657,7 @@ def main():
     args = sys.argv[1:]
 
     if not args:
-        print("用法: python concat.py <workdir> [--silence N] [--output path] [--subtitle-max-length N] [--list]")
+        safe_print("用法: python concat.py <workdir> [--silence N] [--output path] [--subtitle-max-length N] [--list]")
         sys.exit(1)
 
     workdir              = None
@@ -582,7 +673,7 @@ def main():
             try:
                 silence_ms = int(args[i + 1])
             except ValueError:
-                print(f"[FATAL] --silence 参数必须是整数，收到: {args[i+1]}")
+                safe_print(f"[FATAL] --silence 参数必须是整数，收到: {args[i+1]}")
                 sys.exit(1)
             i += 2
         elif a == "--output" and i + 1 < len(args):
@@ -592,10 +683,10 @@ def main():
             try:
                 subtitle_max_length = int(args[i + 1])
             except ValueError:
-                print(f"[FATAL] --subtitle-max-length 参数必须是整数，收到: {args[i+1]}")
+                safe_print(f"[FATAL] --subtitle-max-length 参数必须是整数，收到: {args[i+1]}")
                 sys.exit(1)
             if subtitle_max_length < 1:
-                print("[FATAL] --subtitle-max-length 参数必须大于 0")
+                safe_print("[FATAL] --subtitle-max-length 参数必须大于 0")
                 sys.exit(1)
             i += 2
         elif a == "--list":
@@ -606,7 +697,7 @@ def main():
             i += 1
 
     if not workdir:
-        print("[FATAL] 未指定工作目录")
+        safe_print("[FATAL] 未指定工作目录")
         sys.exit(1)
 
     # Validate and normalize workdir
@@ -614,18 +705,18 @@ def main():
 
     voices_dir = os.path.join(workdir, "voices")
     if not os.path.isdir(voices_dir):
-        print(f"[FATAL] voices/ 目录不存在: {voices_dir}")
+        safe_print(f"[FATAL] voices/ 目录不存在: {voices_dir}")
         sys.exit(1)
 
     voice_files = find_voice_files(voices_dir)
     if not voice_files:
-        print(f"[FATAL] voices/ 目录中没有 .mp3 文件: {voices_dir}")
+        safe_print(f"[FATAL] voices/ 目录中没有 .mp3 文件: {voices_dir}")
         sys.exit(1)
 
-    print(f"[INFO] 找到 {len(voice_files)} 个音频片段")
+    safe_print(f"[INFO] 找到 {len(voice_files)} 个音频片段")
     for vf in voice_files:
         size = os.path.getsize(vf)
-        print(f"  {os.path.basename(vf):>10}  ({size/1024:.0f} KB)")
+        safe_print(f"  {os.path.basename(vf):>10}  ({size/1024:.0f} KB)")
 
     if list_only:
         return
@@ -637,20 +728,22 @@ def main():
         # Round to nearest valid duration
         nearest = min(valid_durations, key=lambda x: abs(x - silence_ms))
         if nearest != silence_ms:
-            print(f"[INFO] 静音时长 {silence_ms}ms → 使用最近可用值 {nearest}ms")
+            safe_print(f"[INFO] 静音时长 {silence_ms}ms → 使用最近可用值 {nearest}ms")
             silence_ms = nearest
         silence_path = find_silence_file(silence_ms)
         if silence_path:
-            print(f"[INFO] 使用静音文件: {silence_path} ({silence_ms}ms)")
+            safe_print(f"[INFO] 使用静音文件: {silence_path} ({silence_ms}ms)")
         else:
-            print(f"[警告] 未找到 silence/{silence_ms}ms.mp3，将不插入静音间隔")
-            print(f"       请将静音文件放置于: {os.path.join(os.path.dirname(os.path.abspath(__file__)), 'silence')}/")
+            safe_print(f"[警告] 未找到 silence/{silence_ms}ms.mp3，将不插入静音间隔")
+            safe_print(f"       请将静音文件放置于: {os.path.join(os.path.dirname(os.path.abspath(__file__)), 'silence')}/")
 
     if output_path is None:
         output_path = os.path.join(workdir, "podcast.mp3")
 
-    print(f"[INFO] 开始拼合 → {output_path}")
+    safe_print(f"[INFO] 开始拼合 → {output_path}")
     concat_mp3_files(voice_files, silence_path, output_path)
+    # Tick the Phase 5 checkbox in meta.md (best-effort, never fatal)
+    check_meta_phase(workdir, "Phase 5")
     # Text export is deliberately best-effort: it must not invalidate an
     # already completed audio render when lines.csv is absent or malformed.
     export_transcript(workdir)

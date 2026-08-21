@@ -5,7 +5,8 @@
       "description": "基本触发：用户提供主题关键词，完成Phase 0-1",
       "input": "/edge-tts-podcast",
       "expected_behaviors": [
-        "检查环境变量 TTS_BASE_URL, TTS_API_KEY, TAVILY_API_KEY",
+        "运行 tts.py --check 检查 TTS 后端连通性（TTS_BASE_URL/TTS_API_KEY 为可选，缺失不算失败）",
+        "检查 TAVILY_API_KEY 是否已配置（系统环境变量或 ~/.env），缺失时提示并终止",
         "引导用户输入播客主题",
         "明确主题后立即创建工作目录"
       ]
@@ -25,8 +26,8 @@
       "description": "URL输入：抓取文章后生成播客",
       "input": "帮我基于这篇文章做播客: https://example.com/article",
       "expected_behaviors": [
-        "WebFetch 抓取 URL",
-        "保存到 sources/article.md",
+        "调用 fetch_article 脚本（.sh 或 .ps1）抓取 URL，生成 markdown 写入 sources/article.md",
+        "总结文章核心观点写入 meta.md",
         "基于文章内容生成双人播客脚本",
         "lines.csv 格式正确（tab分隔，含表头）"
       ]
@@ -46,11 +47,47 @@
     {
       "id": "eval-005",
       "description": "环境变量未配置时的错误提示",
-      "input": "/edge-tts-podcast（未配置任何环境变量）",
+      "input": "/edge-tts-podcast（未配置 TAVILY_API_KEY）",
       "expected_behaviors": [
-        "清晰列出缺失的环境变量名",
-        "提供配置方式说明",
+        "清晰列出缺失的环境变量名 TAVILY_API_KEY",
+        "提供配置方式说明（~/.env 或系统环境变量）",
         "不继续执行后续阶段"
+      ]
+    },
+    {
+      "id": "eval-006",
+      "description": "Phase 2 语料落盘：搜索结果必须持久化，不得依赖终端输出",
+      "input": "做一期关于 AI Agent 发展趋势的中等时长播客",
+      "expected_behaviors": [
+        "将用户输入拆解为 3-4 个正交查询（覆盖不同维度，含 Data/Opinion 类）",
+        "调用 search.sh/search.ps1 时必须传 --output 参数，将原始结果落盘为 sources/tavily-search-results.txt",
+        "不编写内联 Python/Node 脚本重新调用 Tavily API 或手工解析原始 JSON",
+        "从落盘结果中选取相关度 ≥ 0.7 的 3-5 条，用 fetch_article 抓取至少 2 篇写入 sources/<n>.md",
+        "创建 sources/research-notes.md，列出至少 3 条将用于脚本的论点并标注来源文件和 URL",
+        "更新 meta.md 的搜索策略、语料清单和 Phase 2 勾选状态"
+      ]
+    },
+    {
+      "id": "eval-007",
+      "description": "Phase 2 退出门槛：未满足条件时不得进入 Phase 3",
+      "input": "继续做播客（sources/ 目录为空或 research-notes.md 缺失）",
+      "expected_behaviors": [
+        "检查 sources/tavily-search-results.txt（或 article.md）是否存在且非空",
+        "检查 research-notes.md 是否存在且至少 3 条论点",
+        "不满足时返回 Phase 2 补齐产物，而不是凭对话记忆直接生成文字稿",
+        "不宣称'语料已充分'或勾选 Phase 2"
+      ]
+    },
+    {
+      "id": "eval-008",
+      "description": "Phase 5 产物命名：字幕文件与文档一致",
+      "input": "生成音频并拼合（Phase 4 已完成）",
+      "expected_behaviors": [
+        "运行 concat.py 拼合生成 podcast.mp3",
+        "导出 transcript.md（说话人对照表 + 正文）",
+        "导出 podcast.srt（完整句子版，每个 CSV 行一条）",
+        "导出 podcast_splitted.srt（按 --subtitle-max-length 切分版）",
+        "向用户报告各产物路径与字幕条数"
       ]
     }
   ]

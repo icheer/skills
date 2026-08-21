@@ -71,8 +71,8 @@ TTS 后端由 `tts.py` 自动选择：
 ├── meta.md              # 播客元信息（随引导阶段逐步更新）
 ├── lines.csv            # 播客文字稿（tab分隔，见下方格式说明）
 ├── transcript.md        # 便于阅读的文字稿（Phase 5 自动从 lines.csv 导出）
-├── podcast.srt          # 标准时间轴字幕（Phase 5 自动导出，不含说话人）
-├── podcast_full.srt     # 完整句子字幕（每个 CSV 行一条，不做行内切分）
+├── podcast.srt          # 完整句子字幕（每个 CSV 行一条，不做行内切分，Phase 5 自动导出）
+├── podcast_splitted.srt # 按阅读阈值切分的时间轴字幕（长句在标点附近切分，不含说话人）
 ├── sources/             # 可追溯语料（Tavily 原始结果、文章正文、研究笔记）
 ├── voices/              # 逐行音频产物（1.mp3 / 2.mp3 …）
 └── podcast.mp3          # 最终拼合产物（Phase 5 生成）
@@ -524,8 +524,8 @@ Phase 4 完成后，告知用户"所有音频片段已生成，共 N 个文件"�
 
 **目标**：将所有 `voices/*.mp3` 按顺序拼合为完整的 `podcast.mp3`，行间插入静音。拼合成功后，脚本还会尽力从 `lines.csv` 导出：
 - `transcript.md`：正文使用“云希”“晓晓”等简短说话人名称；未知音色则按首次出现顺序标为“说话人 1 / 2 / 3”，完整 `voice_id` 保留在文件开头的说话人对照表中。
-- `podcast.srt`：不含说话人名称的标准字幕文件。每个 `voices/<n>.mp3` 均读取实际 MPEG 音频帧时长，行间静音也读取实际静音 MP3 时长，因此**不**用“总时长 / 行数”平均推算。单行内超过阈值时，在靠近 50% 的句号、分号或逗号切分；切分点的时长按文本单位比例估算（Edge TTS 当前没有词级时间戳），允许存在小幅偏差。
-- `podcast_full.srt`：不含说话人名称的完整句子版字幕。每个 `lines.csv` 数据行对应一条字幕，不做行内切分，适合阅读、检索、校对等场景。
+- `podcast.srt`：不含说话人名称的完整句子版字幕。每个 `lines.csv` 数据行对应一条字幕，不做行内切分，适合阅读、检索、校对等场景。每个 `voices/<n>.mp3` 均读取实际 MPEG 音频帧时长，行间静音也读取实际静音 MP3 时长，因此**不**用“总时长 / 行数”平均推算。
+- `podcast_splitted.srt`：不含说话人名称的按阅读阈值切分版字幕。单行内超过阈值时，在靠近 50% 的句号、分号或逗号切分；切分点的时长按文本单位比例估算（Edge TTS 当前没有词级时间戳），允许存在小幅偏差。适合播放器挂载观看。
 
 两种文本产物的导出失败都只会给出警告，不影响已生成的音频。
 
@@ -538,13 +538,13 @@ python {{INSkillDir}}/scripts/concat.py <workdir> --silence 500
 参数说明：
 - `--silence N`：行间静音时长，单位 ms，可选值 250/500/750/1000，默认 500
 - `--output <path>`：输出路径，默认为 `<workdir>/podcast.mp3`
-- `--subtitle-max-length N`：单条字幕最大可见单位数，默认 `40`；中文按单字计，英文按单词计。仅影响 `podcast.srt` 的长句切分，不影响音频、`transcript.md` 或 `podcast_full.srt`。如需长期调整默认值，可直接修改 `concat.py` 顶部的 `DEFAULT_SUBTITLE_MAX_UNITS` 常量。
+- `--subtitle-max-length N`：单条字幕最大可见单位数，默认 `40`；中文按单字计，英文按单词计。仅影响 `podcast_splitted.srt` 的长句切分，不影响音频、`transcript.md` 或 `podcast.srt`。如需长期调整默认值，可直接修改 `concat.py` 顶部的 `DEFAULT_SUBTITLE_MAX_UNITS` 常量。
 
 **5.2 完成**
 
 - 告知用户输出文件路径和文件大小
 - 同时告知 `transcript.md` 的输出路径（若文字稿导出成功）
-- 同时告知 `podcast.srt` 与 `podcast_full.srt` 的输出路径和字幕条数（若字幕导出成功）
+- 同时告知 `podcast.srt` 与 `podcast_splitted.srt` 的输出路径和字幕条数（若字幕导出成功）
 - 更新 `meta.md` 中的 Phase 5 复选框
 - 输出总结：
   ```

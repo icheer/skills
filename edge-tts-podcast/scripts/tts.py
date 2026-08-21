@@ -157,17 +157,77 @@ def validate_workdir(workdir_arg):
 HEADER = ["done", "voice_id", "content", "speed", "pitch"]
 
 def read_csv(workdir):
-    """Read lines.csv into a list of dicts with keys matching HEADER."""
+    """Read lines.csv into a list of dicts with keys matching HEADER.
+
+    Structure validation (fatal on violation):
+      - Header must contain the 3 required columns: done / voice_id / content.
+        speed and pitch are optional (rows may omit trailing columns).
+      - Every data row must provide at least those 3 fields. A stray Tab in
+        content shifts columns into an extra field; an embedded newline
+        truncates the row — both would synthesize wrong audio, so we abort
+        with the physical file line number instead of guessing.
+    """
     csv_path = os.path.join(workdir, "lines.csv")
     if not os.path.isfile(csv_path):
         safe_print(f"[FATAL] 找不到 lines.csv: {csv_path}")
         sys.exit(1)
 
+    REQUIRED = HEADER[:3]  # done / voice_id / content
     rows = []
+    errors = []
     with open(csv_path, encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
+        if not reader.fieldnames:
+            safe_print(f"[FATAL] lines.csv 为空或缺少表头: {csv_path}")
+            sys.exit(1)
+        missing_cols = [c for c in REQUIRED if c not in reader.fieldnames]
+        if missing_cols:
+            safe_print(f"[FATAL] lines.csv 表头缺少必需列 {missing_cols}，实际表头: {reader.fieldnames}")
+            sys.exit(1)
+
         for row in reader:
+            line_no = reader.line_num  # physical line number in the file
+            # Extra fields land under the None key → content held a stray Tab
+            # that pushed the row past 5 columns.
+            if None in row:
+                errors.append(f"第 {line_no} 行: 字段数超出表头（content 中可能混入了 Tab）")
+                continue
+            # Missing trailing columns become None values; speed/pitch may be
+            # absent, but the 3 required columns must all exist.
+            absent = [c for c in REQUIRED if row.get(c) is None]
+            if absent:
+                errors.append(f"第 {line_no} 行: 缺少必需字段 {absent}（可能被换行截断）")
+                continue
+            # A stray Tab inside content with exactly 5 total fields shifts
+            # text into speed/pitch — detectable as non-numeric values there.
+            for col in ("speed", "pitch"):
+                val = (row.get(col) or "").strip()
+                if val:
+                    try:
+                        float(val)
+                    except ValueError:
+                        errors.append(
+                            f"第 {line_no} 行: {col} 列为非数值文本 {val[:20]!r}"
+                            f"（content 中可能混入了 Tab 导致列错位）")
+                        break
+            if errors and errors[-1].startswith(f"第 {line_no} 行:"):
+                continue
+            # Normalize optional columns to "" so downstream code and
+            # write_csv see a uniform shape (setdefault won't overwrite an
+            # existing None key, hence the explicit assignment).
+            for col in HEADER[3:]:
+                if row.get(col) is None:
+                    row[col] = ""
             rows.append(dict(row))
+
+    if errors:
+        safe_print(f"[FATAL] lines.csv 格式错误，共 {len(errors)} 行异常，已中止：")
+        for msg in errors[:10]:
+            safe_print(f"  - {msg}")
+        if len(errors) > 10:
+            safe_print(f"  - …另有 {len(errors) - 10} 行异常")
+        safe_print("       请修复 lines.csv 后重新运行（content 内不得含 Tab 或换行）。")
+        sys.exit(1)
     return rows
 
 
@@ -176,9 +236,10 @@ def write_csv(workdir, rows):
     csv_path = os.path.join(workdir, "lines.csv")
     if not rows:
         return
-    # Collect all fieldnames (preserve order, HEADER cols first)
+    # Always emit the full 5-column header so optional speed/pitch survive
+    # round-trips even when some rows omit them (DictWriter fills restval="").
     all_keys = list(rows[0].keys())
-    fieldnames = [k for k in HEADER if k in all_keys]
+    fieldnames = list(HEADER)
     for k in all_keys:
         if k not in fieldnames:
             fieldnames.append(k)
@@ -186,7 +247,7 @@ def write_csv(workdir, rows):
     tmp_path = csv_path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t",
-                                extrasaction="ignore")
+                                extrasaction="ignore", restval="")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -197,6 +258,34 @@ def mark_done(workdir, row_index, rows):
     """Mark rows[row_index] as done=1 and persist immediately."""
     rows[row_index]["done"] = "1"
     write_csv(workdir, rows)
+
+
+def check_meta_phase(workdir, phase_label):
+    """Tick a phase checkbox in meta.md (e.g. 'Phase 4: TTS 生成').
+
+    Best-effort: missing meta.md or unmatched label is silently ignored —
+    progress tracking must never break audio generation. Only ticks an
+    unticked box; already-checked phases are left untouched.
+    """
+    meta_path = os.path.join(workdir, "meta.md")
+    if not os.path.isfile(meta_path):
+        return
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            content = f.read()
+        # Match "- [ ] Phase 4: TTS 生成" allowing flexible spacing/label text
+        pattern = re.compile(r"(- \[ \] )(Phase \d+[^\n]*)")
+        def _tick(match):
+            label = match.group(2)
+            if label.startswith(phase_label):
+                return f"- [x] {label}"
+            return match.group(0)
+        new_content = pattern.sub(_tick, content)
+        if new_content != content:
+            with open(meta_path, "w", encoding="utf-8", newline="") as f:
+                f.write(new_content)
+    except OSError:
+        pass  # Non-critical
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +302,9 @@ _SIGN_KEY = base64.b64decode(
     "+sS9ugjB55HEJWRiFXYFw=="
 )
 _ENDPOINT_URL = "https://dev.microsofttranslator.com/apps/endpoint?api-version=1.0"
-_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
+# 48kHz/96kbps: verified working against the direct endpoint (2026-08).
+# Falls back naturally via HTTP error if the endpoint ever rejects it.
+_OUTPUT_FORMAT = "audio-48khz-96kbitrate-mono-mp3"
 _CHUNK_SIZE = 300
 _TOKEN_REFRESH_MARGIN = 300  # refresh the token 5 min before it expires
 
@@ -603,6 +694,9 @@ def process_lines(workdir, base_url, api_key, target_line=None, delay=None):
     if failed:
         safe_print(f"[警告] 失败行号: {failed}")
         safe_print("       可重新运行此脚本，将自动跳过已完成的行。")
+    # Tick the Phase 4 checkbox in meta.md (best-effort, never fatal)
+    if success > 0:
+        check_meta_phase(workdir, "Phase 4")
 
 
 # ---------------------------------------------------------------------------

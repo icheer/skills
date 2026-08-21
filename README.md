@@ -494,20 +494,21 @@ Phase 0: 环境检查（TTS 后端连通性 + TAVILY_API_KEY）
     ↓
 Phase 1: 引导式需求收集（主题、时长、音色、语言风格）
     ↓  （创建工作目录 {yyyy-MM-dd}_{topic}/ ）
-Phase 2: 语料搜索与收集（Tavily 搜索 / WebFetch URL / 保存到 sources/）
+Phase 2: 语料搜索与收集（Tavily 搜索 / fetch_article 抓取，落盘 sources/ + 研究笔记）
     ↓
 Phase 3: 播客文字稿生成（双人对话 CSV: done / voice_id / content / speed / pitch）
     ↓
 Phase 4: 逐行 TTS 生成（调用 Edge TTS API，断点续传，更新 done 列）
     ↓
-Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3）
+Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3 + transcript.md + 双版本 SRT 字幕）
 ```
 
 ### 核心特性
 
 **智能语料采集**
-- **URL 输入** — 伪装微信浏览器 UA，绕过反爬检测，直接生成 markdown 写入 `<workdir>/sources/<n>.md`（含 `# title` / 来源 / 字数 前缀）
-- **关键词搜索** — 3-4 个正交查询并行搜索（Tavily），自动抓取 Top 5 高相关度结果，**直接落盘到工作目录的 `sources/`**，无需 Python 中转
+- **URL 输入** — 伪装微信浏览器 UA，绕过反爬检测，直接生成 markdown 写入 `<workdir>/sources/article.md`（含 `# title` / 来源 / 字数 前缀）
+- **关键词搜索** — 3-4 个正交查询并行搜索（Tavily），原始结果落盘 `sources/tavily-search-results.txt`，再抓取相关度 ≥ 0.7 的 3-5 条全文到 `sources/<n>.md`
+- **研究笔记** — 生成 `sources/research-notes.md`，每条论点标注来源文件和 URL，Phase 3 只依赖落盘笔记而非对话记忆
 - **自动补充** — URL 内容不足时，自动生成补充搜索查询
 
 **播客脚本生成**
@@ -518,6 +519,7 @@ Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3�
 
 **可靠 TTS 生成**
 - **零配置直连** — 内置微软 Edge TTS 完整调用链（HMAC 签名换取 token → SSML 合成），默认无需任何 TTS 相关环境变量
+- **高音质输出** — 48kHz / 96kbps MP3（实测直连端点可用）
 - **代理逃生舱** — 配置 `TTS_BASE_URL` 即可切回 Cloudflare Worker 代理，应对直连被限流/被墙
 - **逐行串行处理** — 每行生成完立即原子更新 `done` 列，确保断点续传
 - **跨会话恢复** — 在新会话中继续未完成任务，自动跳过已生成的行
@@ -526,6 +528,8 @@ Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3�
 **音频拼接**
 - **纯 Python 实现** — 无需 ffmpeg，二进制 MP3 拼接 + ID3 标签处理
 - **行间静音** — 可配置 250ms / 500ms / 750ms / 1000ms 静音间隔
+- **自动导出文字稿与字幕** — 拼合成功后自动生成 `transcript.md`（含说话人对照表）、`podcast.srt`（完整句子版）和 `podcast_splitted.srt`（按阅读阈值切分版）；字幕时间轴基于实际 MPEG 音频帧时长计算，不做平均推算
+- **编码降级容错** — Windows GBK 控制台下中文/符号输出自动降级，不中断执行
 
 ### 音色推荐
 
@@ -543,9 +547,12 @@ Phase 5: 音频拼接（MP3 二进制拼接 + 行间静音，输出 podcast.mp3�
 
 ```
 {yyyy-MM-dd}_{topic}/
-├── meta.md              # 播客元信息（主题、参数、搜索策略、语料清单）
+├── meta.md              # 播客元信息（主题、参数、搜索策略、语料清单、阶段进度）
 ├── lines.csv            # 播客文字稿（tab 分隔，done 列追踪进度）
-├── sources/             # 语料文件（article.md / 1.md / 2.md …）
+├── transcript.md        # 可读文字稿（Phase 5 自动导出，含说话人对照表）
+├── podcast.srt          # 完整句子字幕（每个 CSV 行一条，Phase 5 自动导出）
+├── podcast_splitted.srt # 按阅读阈值切分的时间轴字幕（长句在标点附近切分）
+├── sources/             # 语料文件（article.md / 1.md / 2.md / 研究笔记 / 搜索原始结果）
 ├── voices/              # 逐行音频（1.mp3 / 2.mp3 …）
 └── podcast.mp3          # 最终拼合产物
 ```
@@ -594,10 +601,10 @@ TTS_API_KEY=your_tts_api_key_here              # 可选，仅当该 worker 启�
 Agent:
  → Phase 0: 检查 TTS 后端（直连微软 ✅）+ TAVILY_API_KEY ✅
  → Phase 1: 引导式提问（主题确认、时长选择、音色方案）
- → Phase 2: Tavily 搜索 3 个正交查询 → 抓取 Top 5 结果 → 保存到 sources/
+ → Phase 2: Tavily 搜索 3 个正交查询 → 抓取高相关度全文 → 落盘 sources/ + 研究笔记
  → Phase 3: 生成 lines.csv（40-60 行，男女对话）
  → Phase 4: 调用 tts.py 逐行生成音频（显示进度：[3/50]）
- → Phase 5: 调用 concat.py 拼接 → podcast.mp3
+ → Phase 5: 调用 concat.py 拼接 → podcast.mp3 + transcript.md + 双版本 SRT 字幕
 
 ✅ 播客生成完成！
 📁 工作目录: 2026-08-17_ai-agent-trends/
