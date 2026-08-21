@@ -71,6 +71,8 @@ TTS 后端由 `tts.py` 自动选择：
 ├── meta.md              # 播客元信息（随引导阶段逐步更新）
 ├── lines.csv            # 播客文字稿（tab分隔，见下方格式说明）
 ├── transcript.md        # 便于阅读的文字稿（Phase 5 自动从 lines.csv 导出）
+├── podcast.srt          # 标准时间轴字幕（Phase 5 自动导出，不含说话人）
+├── podcast_full.srt     # 完整句子字幕（每个 CSV 行一条，不做行内切分）
 ├── sources/             # 可追溯语料（Tavily 原始结果、文章正文、研究笔记）
 ├── voices/              # 逐行音频产物（1.mp3 / 2.mp3 …）
 └── podcast.mp3          # 最终拼合产物（Phase 5 生成）
@@ -360,25 +362,35 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
 
 **③ 执行并行搜索**
 
-每个查询 `num_results=6`，控制总条目 ≤ 24：
+每个查询 `num_results=6`，控制总条目 ≤ 24。**必须使用 `--output`（`-Output`）参数**，
+而不是自己拼 `| tee`：脚本会把每个查询的原始 JSON 完整落盘，同时向终端打印按相关度
+排序的精简摘要（每条含 score/标题/URL，以及截取前 100 字的 `content` 片段，外加
+Tavily 的简短 answer），避免整段原始 JSON 刷屏或被工具截断而看不全。保留 `content`
+片段是为了让 Agent 能据此判断该结果是否值得 `fetch_article` 抓取全文，而不必先落盘
+再逐条打开原文：
 
 ```bash
-# `tee` 会将 Tavily 原始返回同时展示并保存；不得省略该步骤。
-bash {{INSkillDir}}/scripts/search.sh --num-results 6 "query1" "query2" "query3" \
-  | tee "<workdir>/sources/tavily-search-results.txt"
+bash {{INSkillDir}}/scripts/search.sh --num-results 6 --output "<workdir>/sources/tavily-search-results.txt" \
+  "query1" "query2" "query3"
 # Windows PowerShell:
 powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 `
-    -NumResults 6 "query1" "query2" "query3" `
-    | Set-Content -Encoding utf8 "<workdir>\sources\tavily-search-results.txt"
+    -NumResults 6 -Output "<workdir>\sources\tavily-search-results.txt" `
+    "query1" "query2" "query3"
 ```
 
 `sources/tavily-search-results.txt` 是本次检索的**最低限度、必需的可复用证据**：
 它保留原始 URL、标题、摘要、相关度与 Tavily 回答，供后续审阅、重写脚本及跨会话续作使用。
 即使 Agent 已从终端输出中获得足够信息，也仍未完成“收集”——必须先执行上述带落盘的命令。
 
+**⚠️ 禁止的替代做法**：不要在终端摘要看起来不够用时，另写内联 Python/Node 脚本重新
+调用 Tavily API 或手工解析原始 JSON——这会绕过落盘文件、重复消耗搜索配额，且结果不会
+被持久化。终端摘要本身已经是解析好的结构化数据（由 `search.sh`/`search.ps1` 内部生成，
+无需额外脚本或步骤）；若摘要缺失或格式异常，应检查是否漏传了 `--output` 参数并重新运行，
+而不是自行重新实现。
+
 **④ 结果处理**
 
-1. 阅读已落盘的 `sources/tavily-search-results.txt`，从中选取 **相关度 ≥ 0.7 的 3-5 条**。优先抓取能支撑关键事实、数据或分歧观点的来源；不必为了凑数量抓取内容农场、重复转述或无法访问页面。
+1. 阅读终端打印的摘要（或已落盘的 `sources/tavily-search-results.txt`），从中选取 **相关度 ≥ 0.7 的 3-5 条**。优先抓取能支撑关键事实、数据或分歧观点的来源；不必为了凑数量抓取内容农场、重复转述或无法访问页面。
 2. 用 fetch_article 脚本抓取所选文章，直接生成 markdown 写入 `<workdir>/sources/<n>.md`：
    ```bash
    # Unix / Git Bash（默认）
@@ -510,7 +522,12 @@ Phase 4 完成后，告知用户"所有音频片段已生成，共 N 个文件"�
 
 **执行时机**：Phase 4 完成后。
 
-**目标**：将所有 `voices/*.mp3` 按顺序拼合为完整的 `podcast.mp3`，行间插入静音。拼合成功后，脚本还会尽力从 `lines.csv` 导出 `transcript.md`：正文使用“云希”“晓晓”等简短说话人名称；未知音色则按首次出现顺序标为“说话人 1 / 2 / 3”，完整 `voice_id` 保留在文件开头的说话人对照表中。文字稿导出失败只会给出警告，不影响已生成的音频。
+**目标**：将所有 `voices/*.mp3` 按顺序拼合为完整的 `podcast.mp3`，行间插入静音。拼合成功后，脚本还会尽力从 `lines.csv` 导出：
+- `transcript.md`：正文使用“云希”“晓晓”等简短说话人名称；未知音色则按首次出现顺序标为“说话人 1 / 2 / 3”，完整 `voice_id` 保留在文件开头的说话人对照表中。
+- `podcast.srt`：不含说话人名称的标准字幕文件。每个 `voices/<n>.mp3` 均读取实际 MPEG 音频帧时长，行间静音也读取实际静音 MP3 时长，因此**不**用“总时长 / 行数”平均推算。单行内超过阈值时，在靠近 50% 的句号、分号或逗号切分；切分点的时长按文本单位比例估算（Edge TTS 当前没有词级时间戳），允许存在小幅偏差。
+- `podcast_full.srt`：不含说话人名称的完整句子版字幕。每个 `lines.csv` 数据行对应一条字幕，不做行内切分，适合阅读、检索、校对等场景。
+
+两种文本产物的导出失败都只会给出警告，不影响已生成的音频。
 
 **5.1 执行拼合**
 
@@ -521,11 +538,13 @@ python {{INSkillDir}}/scripts/concat.py <workdir> --silence 500
 参数说明：
 - `--silence N`：行间静音时长，单位 ms，可选值 250/500/750/1000，默认 500
 - `--output <path>`：输出路径，默认为 `<workdir>/podcast.mp3`
+- `--subtitle-max-length N`：单条字幕最大可见单位数，默认 `40`；中文按单字计，英文按单词计。仅影响 `podcast.srt` 的长句切分，不影响音频、`transcript.md` 或 `podcast_full.srt`。如需长期调整默认值，可直接修改 `concat.py` 顶部的 `DEFAULT_SUBTITLE_MAX_UNITS` 常量。
 
 **5.2 完成**
 
 - 告知用户输出文件路径和文件大小
 - 同时告知 `transcript.md` 的输出路径（若文字稿导出成功）
+- 同时告知 `podcast.srt` 与 `podcast_full.srt` 的输出路径和字幕条数（若字幕导出成功）
 - 更新 `meta.md` 中的 Phase 5 复选框
 - 输出总结：
   ```

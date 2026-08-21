@@ -6,8 +6,13 @@
 # PowerShell（Windows PowerShell 5.1 或 PowerShell 7+），无需 bash / curl。
 #
 # 用法:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File search.ps1 [-NumResults N] "query1" "query2" ...
+#   powershell -NoProfile -ExecutionPolicy Bypass -File search.ps1 [-NumResults N] [-Output FILE] "query1" "query2" ...
 #   powershell -NoProfile -ExecutionPolicy Bypass -File search.ps1 -Check   # 检查 API Key 配置
+#
+# 传 -Output FILE 时：每个查询的原始 JSON 会完整落盘到 FILE（可追溯证据），而
+# stdout 只打印按相关度排序的精简摘要（score/标题/URL）。不传 -Output 时保持旧行
+# 为，原始 JSON 直接打印到 stdout（调试用）。摘要使用 PowerShell 自带的
+# ConvertFrom-Json 生成，不引入 python 或其他外部依赖。
 #
 # API Key 加载优先级:
 #   1. 环境变量 TAVILY_API_KEY
@@ -19,6 +24,7 @@
 param(
     [switch]$Check,
     [int]$NumResults = 8,
+    [string]$Output = '',
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Queries
 )
@@ -191,17 +197,70 @@ foreach ($q in $Queries) {
 $null = Wait-Job -Job $jobs
 
 $success = 0
+$combined = New-Object System.Text.StringBuilder
+$parsed = @()
 foreach ($job in $jobs) {
     $r = Receive-Job -Job $job
     Remove-Job -Job $job | Out-Null
-    [Console]::Out.WriteLine("===== QUERY: $($r.Query) =====")
+    [void]$combined.AppendLine("===== QUERY: $($r.Query) =====")
     if ($r.Ok) {
-        [Console]::Out.WriteLine($r.Content)
+        [void]$combined.AppendLine($r.Content)
         $success++
     } else {
-        [Console]::Out.WriteLine("[ERROR] $($r.Content)")
+        [void]$combined.AppendLine("[ERROR] $($r.Content)")
     }
-    [Console]::Out.WriteLine('---')
+    [void]$combined.AppendLine('---')
+    $parsed += $r
+}
+$combinedText = $combined.ToString()
+
+if (-not $Output) {
+    # 未指定落盘路径时保留旧行为：直接输出原始 JSON，供调试使用。
+    [Console]::Out.WriteLine($combinedText)
+} else {
+    $outDir = Split-Path -Parent $Output
+    if ($outDir -and -not (Test-Path $outDir)) {
+        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    }
+    [System.IO.File]::WriteAllText($Output, $combinedText, (New-Object System.Text.UTF8Encoding($false)))
+    [Console]::Error.WriteLine("[INFO] 原始结果已落盘: $Output")
+
+    # 精简摘要：每个查询打印 answer 概要，结果按 score 降序打印 score/标题/URL。
+    foreach ($r in $parsed) {
+        [Console]::Out.WriteLine("===== QUERY: $($r.Query) =====")
+        if (-not $r.Ok) {
+            [Console]::Out.WriteLine("  [ERROR] $($r.Content)")
+            continue
+        }
+        try {
+            $data = $r.Content | ConvertFrom-Json
+        } catch {
+            [Console]::Out.WriteLine('  [警告] 无法解析该查询返回的 JSON，请查看落盘文件核对原始内容。')
+            continue
+        }
+        if ($data.answer) {
+            $answer = [string]$data.answer
+            if ($answer.Length -gt 200) { $answer = $answer.Substring(0, 200) + '…' }
+            [Console]::Out.WriteLine("  概要: $answer")
+        }
+        $results = @($data.results | Sort-Object -Property score -Descending)
+        if ($results.Count -eq 0) {
+            [Console]::Out.WriteLine('  (无结果)')
+        }
+        $i = 0
+        foreach ($item in $results) {
+            $i++
+            $scoreText = '{0:N3}' -f [double]$item.score
+            [Console]::Out.WriteLine("  $i. score=$scoreText | $($item.title)")
+            [Console]::Out.WriteLine("     $($item.url)")
+            if ($item.content) {
+                $snippet = [string]$item.content
+                if ($snippet.Length -gt 100) { $snippet = $snippet.Substring(0, 100) + '…' }
+                [Console]::Out.WriteLine("     $snippet")
+            }
+        }
+        [Console]::Out.WriteLine('')
+    }
 }
 
 [Console]::Error.WriteLine("[INFO] $success/$($Queries.Count) 个查询成功。")

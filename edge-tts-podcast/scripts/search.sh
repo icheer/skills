@@ -6,8 +6,14 @@
 # 与 max-search/scripts/search.sh 保持相同接口约定。
 #
 # 用法:
-#   bash search.sh [--num-results N] "query1" "query2" "query3"
+#   bash search.sh [--num-results N] [--output FILE] "query1" "query2" "query3"
 #   bash search.sh --check          # 检查 API Key 配置状态
+#
+# 传 --output FILE 时：每个查询的原始 JSON 会完整落盘到 FILE（可追溯证据），
+# 而 stdout 只打印按相关度排序的精简摘要（score/标题/URL），避免整段 JSON 刷屏
+# 或被工具截断。不传 --output 时保持旧行为，原始 JSON 直接打印到 stdout（调试用）。
+# 摘要由内嵌在本脚本中的 Python 代码生成，不引入额外 .py 文件；若本机没有
+# 可用 python，会自动回退为打印原始 JSON。
 #
 # API Key 加载优先级:
 #   1. 环境变量 TAVILY_API_KEY
@@ -118,6 +124,7 @@ fi
 # 解析参数
 # -----------------------------------------------------------------------------
 QUERIES=()
+OUTPUT_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --num-results)
@@ -126,6 +133,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --num-results=*)
       NUM_RESULTS="${1#*=}"
+      shift
+      ;;
+    --output)
+      OUTPUT_PATH="$2"
+      shift 2
+      ;;
+    --output=*)
+      OUTPUT_PATH="${1#*=}"
       shift
       ;;
     *)
@@ -206,14 +221,88 @@ for q in "${QUERIES[@]}"; do
 done
 wait
 
+RAW_COMBINED="$TMPDIR_RUN/combined.txt"
+: >"$RAW_COMBINED"
+
 success=0
 for ((i = 0; i < idx; i++)); do
   f="$TMPDIR_RUN/$i.out"
   [[ -f "$f" ]] || continue
-  cat "$f"
-  echo "---"
+  cat "$f" >>"$RAW_COMBINED"
+  echo "---" >>"$RAW_COMBINED"
   grep -q '^\[ERROR\]' "$f" || success=$((success + 1))
 done
+
+if [[ -z "$OUTPUT_PATH" ]]; then
+  # 未指定落盘路径时保留旧行为：直接输出原始 JSON，供调试使用。
+  cat "$RAW_COMBINED"
+else
+  mkdir -p "$(dirname "$OUTPUT_PATH")"
+  cp "$RAW_COMBINED" "$OUTPUT_PATH"
+  echo "[INFO] 原始结果已落盘: $OUTPUT_PATH" >&2
+
+  # command -v 只确认命令存在，部分 Windows 环境的 python3 是商店占位符
+  # （能被找到但执行会静默失败），所以用 --version 实测可用性。
+  PY_BIN=""
+  for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version >/dev/null 2>&1; then
+      PY_BIN="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$PY_BIN" ]]; then
+    echo "[提示] 未找到可用的 python 解释器，无法生成摘要，改为打印原始 JSON。" >&2
+    cat "$RAW_COMBINED"
+  else
+    "$PY_BIN" - "$OUTPUT_PATH" <<'PYEOF' || cat "$RAW_COMBINED"
+import json
+import re
+import sys
+
+# Windows 重定向输出时默认会用系统代码页（GBK）而非 UTF-8，需显式固定。
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
+
+with open(sys.argv[1], encoding='utf-8', errors='replace') as f:
+    text = f.read()
+
+blocks = re.split(r'^===== QUERY: (.*) =====\n', text, flags=re.MULTILINE)
+it = iter(blocks[1:])
+for query, content in zip(it, it):
+    content = content.rsplit('\n---', 1)[0].strip()
+    print('===== QUERY: ' + query + ' =====')
+    if content.startswith('[ERROR]'):
+        print('  ' + content)
+        continue
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        print('  [警告] 无法解析该查询返回的 JSON，请查看落盘文件核对原始内容。')
+        continue
+    answer = (data.get('answer') or '').strip()
+    if answer:
+        truncated = answer[:200] + ('…' if len(answer) > 200 else '')
+        print('  概要: ' + truncated)
+    results = sorted(data.get('results') or [], key=lambda r: r.get('score', 0), reverse=True)
+    if not results:
+        print('  (无结果)')
+    for i, r in enumerate(results, 1):
+        title = (r.get('title') or '').strip()
+        url = (r.get('url') or '').strip()
+        snippet = (r.get('content') or '').strip()
+        if len(snippet) > 100:
+            snippet = snippet[:100] + '…'
+        print('  {0}. score={1:.3f} | {2}'.format(i, r.get('score', 0), title))
+        print('     ' + url)
+        if snippet:
+            print('     ' + snippet)
+    print()
+PYEOF
+  fi
+fi
 
 echo "[INFO] ${success}/${idx} 个查询成功。" >&2
 if (( success == 0 )); then
