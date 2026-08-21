@@ -293,7 +293,7 @@ Phase 1 结束时，`meta.md` 应完整记录所有已确认的参数。
        --output "<workdir>/sources/article.md" --format markdown
 
    # Windows 无 Git Bash
-   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 `
+   powershell -NoProfile -File {{INSkillDir}}/scripts/fetch_article.ps1 `
        -Url "<url>" `
        -Output "<workdir>\sources\article.md" `
        -Format markdown
@@ -376,7 +376,7 @@ Tavily 的简短 answer），避免整段原始 JSON 刷屏或被工具截断而
 bash {{INSkillDir}}/scripts/search.sh --num-results 6 --output "<workdir>/sources/tavily-search-results.txt" \
   "query1" "query2" "query3"
 # Windows PowerShell:
-powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/search.ps1 `
+powershell -NoProfile -File {{INSkillDir}}/scripts/search.ps1 `
     -NumResults 6 -Output "<workdir>\sources\tavily-search-results.txt" `
     "query1" "query2" "query3"
 ```
@@ -401,7 +401,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/searc
        --output "<workdir>/sources/<n>.md" --format markdown
 
    # Windows PowerShell（零依赖）
-   powershell -NoProfile -ExecutionPolicy Bypass -File {{INSkillDir}}/scripts/fetch_article.ps1 `
+   powershell -NoProfile -File {{INSkillDir}}/scripts/fetch_article.ps1 `
        -Url "<url>" `
        -Output "<workdir>\sources\<n>.md" `
        -Format markdown

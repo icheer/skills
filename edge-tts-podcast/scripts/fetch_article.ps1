@@ -9,8 +9,11 @@
 # 功能：伪装微信浏览器抓取 URL -> HTML 清理 -> 纯文本抽取 -> 输出 JSON 或 Markdown
 #
 # 用法:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File fetch_article.ps1 -Url <url> [-Output PATH] [-Format json|markdown]
-#   powershell -NoProfile -ExecutionPolicy Bypass -File fetch_article.ps1 -Url <url> -Output <path> -Format markdown
+#   powershell -NoProfile -File fetch_article.ps1 -Url <url> [-Output PATH] [-Format json|markdown]
+#   powershell -NoProfile -File fetch_article.ps1 -Url <url> -Output <path> -Format markdown
+#
+#   注意：不要加 -ExecutionPolicy Bypass —— Claude Code 的 auto-mode 安全分类器
+#   会拦截该参数；本机策略 RemoteSigned 下本地脚本可直接运行。
 #
 #   默认行为（兼容老调用）：JSON 输出到 stdout
 #

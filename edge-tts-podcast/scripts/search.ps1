@@ -6,8 +6,11 @@
 # PowerShell（Windows PowerShell 5.1 或 PowerShell 7+），无需 bash / curl。
 #
 # 用法:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File search.ps1 [-NumResults N] [-Output FILE] "query1" "query2" ...
-#   powershell -NoProfile -ExecutionPolicy Bypass -File search.ps1 -Check   # 检查 API Key 配置
+#   powershell -NoProfile -File search.ps1 [-NumResults N] [-Output FILE] "query1" "query2" ...
+#   powershell -NoProfile -File search.ps1 -Check   # 检查 API Key 配置
+#
+#   注意：不要加 -ExecutionPolicy Bypass —— Claude Code 的 auto-mode 安全分类器
+#   会拦截该参数；本机策略 RemoteSigned 下本地脚本可直接运行。
 #
 # 传 -Output FILE 时：每个查询的原始 JSON 会完整落盘到 FILE（可追溯证据），而
 # stdout 只打印按相关度排序的精简摘要（score/标题/URL）。不传 -Output 时保持旧行
