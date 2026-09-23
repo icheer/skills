@@ -1,0 +1,140 @@
+{
+  "evals": [
+    {
+      "id": "eval-001",
+      "description": "基本触发：用户提供主题关键词，完成Phase 0-1",
+      "input": "/sense-tts-podcast",
+      "expected_behaviors": [
+        "运行 tts.py --check 检查 SenseAudio 连通性（验证 SENSE_AUDIO_TOKEN 并列出可见音色；token 缺失/无效时清晰报错）",
+        "检查 TAVILY_API_KEY 是否已配置（系统环境变量或 ~/.env），缺失时提示并终止",
+        "引导用户输入播客主题",
+        "明确主题后立即创建工作目录"
+      ]
+    },
+    {
+      "id": "eval-002",
+      "description": "断点续传：已有工作目录时询问是否继续",
+      "input": "/sense-tts-podcast（当前目录已有 lines.csv 且存在 done=0 的行）",
+      "expected_behaviors": [
+        "检测到已有未完成任务",
+        "询问用户是否继续断点任务",
+        "跳转到 Phase 4 继续生成"
+      ]
+    },
+    {
+      "id": "eval-003",
+      "description": "URL输入：抓取文章后生成播客",
+      "input": "帮我基于这篇文章做播客: https://example.com/article",
+      "expected_behaviors": [
+        "调用 fetch_article 脚本（.sh 或 .ps1）抓取 URL，生成 markdown 写入 sources/article.md",
+        "总结文章核心观点写入 meta.md",
+        "基于文章内容生成双人播客脚本",
+        "lines.csv 格式正确（tab分隔，含表头）"
+      ]
+    },
+    {
+      "id": "eval-004",
+      "description": "lines.csv 格式验证",
+      "input": "生成一期关于量子计算的中等时长播客",
+      "expected_behaviors": [
+        "lines.csv 使用 tab 分隔",
+        "包含表头行: done\\tvoice_id\\tcontent\\tspeed\\tpitch",
+        "所有 done 列初始值为 0",
+        "voice_id 使用 SenseAudio 音色（默认免费档组合 male_0004_a / male_0018_a，或 meta.md 中确认的其他可用音色）",
+        "行数在 33-42 之间、总字数约 2000-2500（中等时长，按 250 字/分钟折算）"
+      ]
+    },
+    {
+      "id": "eval-005",
+      "description": "环境变量未配置时的错误提示",
+      "input": "/sense-tts-podcast（未配置 SENSE_AUDIO_TOKEN 或 TAVILY_API_KEY）",
+      "expected_behaviors": [
+        "清晰列出缺失的环境变量名（TAVILY_API_KEY / SENSE_AUDIO_TOKEN）",
+        "提供配置方式说明（~/.env 或系统环境变量）",
+        "不继续执行后续阶段"
+      ]
+    },
+    {
+      "id": "eval-006",
+      "description": "Phase 2 语料落盘：搜索结果必须持久化，不得依赖终端输出",
+      "input": "做一期关于 AI Agent 发展趋势的中等时长播客",
+      "expected_behaviors": [
+        "将用户输入拆解为 3-4 个正交查询（覆盖不同维度，含 Data/Opinion 类）",
+        "调用 search.sh/search.ps1 时必须传 --output 参数，将原始结果落盘为 sources/tavily-search-results.txt",
+        "不编写内联 Python/Node 脚本重新调用 Tavily API 或手工解析原始 JSON",
+        "从落盘结果中选取相关度 ≥ 0.7 的 3-5 条，用 fetch_article 抓取至少 2 篇写入 sources/<n>.md",
+        "创建 sources/research-notes.md，列出至少 3 条将用于脚本的论点并标注来源文件和 URL",
+        "更新 meta.md 的搜索策略、语料清单和 Phase 2 勾选状态"
+      ]
+    },
+    {
+      "id": "eval-007",
+      "description": "Phase 2 退出门槛：未满足条件时不得进入 Phase 3",
+      "input": "继续做播客（sources/ 目录为空或 research-notes.md 缺失）",
+      "expected_behaviors": [
+        "检查 sources/tavily-search-results.txt（或 article.md）是否存在且非空",
+        "检查 research-notes.md 是否存在且至少 3 条论点",
+        "不满足时返回 Phase 2 补齐产物，而不是凭对话记忆直接生成文字稿",
+        "不宣称'语料已充分'或勾选 Phase 2"
+      ]
+    },
+    {
+      "id": "eval-008",
+      "description": "Phase 5 产物命名：字幕文件与文档一致",
+      "input": "生成音频并拼合（Phase 4 已完成）",
+      "expected_behaviors": [
+        "运行 concat.py 拼合生成 podcast.mp3",
+        "导出 transcript.md（说话人对照表 + 正文）",
+        "导出 podcast.srt（完整句子版，每个 CSV 行一条）",
+        "导出 podcast_splitted.srt（按 --subtitle-max-length 切分版）",
+        "向用户报告各产物路径与字幕条数"
+      ]
+    },
+    {
+      "id": "eval-009",
+      "description": "Phase 3 提示词加载门槛：生成文字稿前必须读取 podcast_script.md",
+      "input": "语料已就绪，继续生成文字稿（进入 Phase 3）",
+      "expected_behaviors": [
+        "生成任何一行文字稿之前，先完整读取 prompts/podcast_script.md（有读取动作，而非凭先验直接写作）",
+        "读取后在回复中列出 3 条从提示词摘取的关键约束，再开始生成",
+        "在 meta.md 的'提示词加载'小节记录'已加载: {时间}'标记",
+        "生成的 lines.csv 符合提示词中的规则（如单轮不超过 150 字、voice_id 与 meta.md 音色方案一致）",
+        "不得跳过读取直接输出 CSV，也不得只读片段"
+      ]
+    },
+    {
+      "id": "eval-010",
+      "description": "付费 TTS 的成本意识与错误处理",
+      "input": "Phase 4 生成音频时，某行使用了账号套餐外的音色（如 female_0008_a）",
+      "expected_behaviors": [
+        "tts.py 报 403 no access to the specified voice 后整轮中止，向用户说明是音色不在套餐内",
+        "建议用户改用 references/sense_tts_voices.md 中当前套餐可用的音色（免费档：male_0004_a / male_0018_a / child_0001_a/b），或改用 web_tts.py 网页版通道",
+        "修改 lines.csv 音色后重跑时，已完成行自动跳过，不重复计费",
+        "用户要求重生成某一行时使用 --line N 定点重生成，而不是整篇重跑"
+      ]
+    },
+    {
+      "id": "eval-011",
+      "description": "网页版通道（web_tts.py）：更丰富的音色选择",
+      "input": "我想用女声做这期播客（账号为 Free 档，API 无可用女声）",
+      "expected_behaviors": [
+        "说明 API 通道受套餐限制，推荐网页版通道（74 角色/167 标签，限免 SVIP 可用）",
+        "检查 SENSE_WEB_TOKEN（python scripts/web_tts.py --check）；缺失时给出抓取指引（登录 senseaudio.cn → F12 → api/voice/tts → authorization 头）",
+        "音色选择参考 references/sense_tts_voices.md 的网页版推荐（如 female_0025_a 播客才女、male_0029_b 利落青年/开场介绍）",
+        "选用多状态角色（male_0029/female_0036/male_0028/female_0035 等）时，生成文字稿按台词功能逐行选变体（开场_b/剖析_a/提问_e/闲聊_d/升华_f），字母含义以变体对照表为准，不在 meta.md 记录映射之外凭空猜测",
+        "Phase 4 用 web_tts.py 生成（voices/{n}.wav 原生 WAV），lines.csv 格式与 tts.py 完全一致（voice_id 用短码，UUID 由脚本内部解析）",
+        "Phase 5 直接运行 concat.py：WAV 无损合并 + 按毫秒精确生成行间静音（无需静音资产）+ 单次 lameenc 编码出 podcast.mp3，并始终保留无损 podcast.wav 作为重编码母带；未安装 lameenc 时仅保留 podcast.wav 并提示安装"
+      ]
+    },
+    {
+      "id": "eval-012",
+      "description": "网页版通道 token 失效处理",
+      "input": "web_tts.py 生成中途返回 HTTP 401 未登录",
+      "expected_behaviors": [
+        "整轮立即中止（不逐行空跑），已完成行保持 done=1",
+        "向用户说明 SENSE_WEB_TOKEN 已过期/轮换，需重新登录 senseaudio.cn 抓取新 token 更新 ~/.env",
+        "更新后重跑 web_tts.py 自动续传"
+      ]
+    }
+  ]
+}
