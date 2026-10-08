@@ -2,6 +2,9 @@
 
 一个轻量级、高性能的无头浏览器自动化工具,基于 Rust 编写的 Obscura 引擎。
 
+> **当前已知最新版本**: Obscura v0.2.4
+> **升级**: 运行 `bash scripts/install-obscura.sh` (Linux/macOS) 或 `.\scripts\install-obscura.ps1` (Windows)
+
 ## 📋 功能概览
 
 - **网页内容提取**: HTML/Text/Markdown/Links/Assets/Cookies
@@ -10,6 +13,7 @@
 - **批量抓取**: 并发处理多个 URL
 - **隐身模式**: 反指纹和追踪器拦截
 - **CDP 集成**: 支持 Puppeteer/Playwright 连接
+- **中文字体支持**: 通过 `--font-dir` 加载本地字体 (v0.2.4+)
 
 ## 🚀 快速开始
 
@@ -411,9 +415,78 @@ obscura --stealth \
 
 ---
 
-### 7. CDP 服务器模式
+### 7. 中文字体支持 (`--font-dir`)
 
-#### 7.1 启动 CDP 服务器
+> **新增于 v0.2.4**（仅限 `render` 构建版本，即带截图功能的版本）
+
+Obscura 内置字体集不含中文，截图时汉字会显示为方块。`--font-dir` 让你指向系统或自定义字体目录，引擎会在每个 worker 启动时递归扫描并加载其中所有字体文件（`.ttf`、`.otf`、`.woff2` 等）。
+
+此参数**只能在 `serve` 子命令**上使用，可重复指定多个目录。
+
+#### 7.1 快速解决截图乱码
+
+**Windows（直接用系统字体）**
+
+```powershell
+obscura serve --font-dir "C:\Windows\Fonts" --port 9222
+```
+
+**Linux（Noto 中文字体）**
+
+```bash
+# 先安装字体（如未安装）
+sudo apt install fonts-noto-cjk
+
+# 启动时加载
+obscura serve --font-dir /usr/share/fonts --port 9222
+```
+
+**macOS**
+
+```bash
+obscura serve --font-dir /Library/Fonts --font-dir ~/Library/Fonts --port 9222
+```
+
+#### 7.2 加载自定义字体包
+
+```bash
+# 将字体集中放到一个目录，保持主字体目录干净
+mkdir -p ~/obscura-fonts
+cp /path/to/NotoSansCJK*.ttf ~/obscura-fonts/
+
+obscura serve --font-dir ~/obscura-fonts --port 9222
+```
+
+#### 7.3 多目录叠加（可重复）
+
+```bash
+# 系统字体 + 项目私有字体
+obscura serve \
+  --font-dir /usr/share/fonts \
+  --font-dir ./project-fonts \
+  --stealth \
+  --port 9222
+```
+
+#### 7.4 结合截图验证字体是否生效
+
+```bash
+# 先启动带字体的 serve
+obscura serve --font-dir /usr/share/fonts/noto &
+
+# 用 Puppeteer 截一张含中文内容的页面，或直接 fetch --screenshot
+obscura fetch "https://zh.wikipedia.org/wiki/汉字" \
+  --wait-until networkidle0 \
+  --screenshot /tmp/cn-test.png
+```
+
+> **注意**: `obscura fetch` 目前无法直接继承 `serve` 的字体配置。`--font-dir` 目前仅对 `obscura serve` 生效——通过 CDP/Puppeteer/Playwright 连接后才能使用已加载的字体。直接运行 `obscura fetch --screenshot` 暂不支持 `--font-dir`。
+
+---
+
+### 8. CDP 服务器模式
+
+#### 8.1 启动 CDP 服务器
 
 ```bash
 # 默认端口 9222
@@ -427,6 +500,12 @@ obscura serve --stealth --port 9222
 
 # 多工作进程
 obscura serve --workers 4 --port 9222
+
+# 中文字体支持（需要 render 构建版本）
+obscura serve --font-dir /usr/share/fonts/noto --port 9222
+
+# 完整配置：多工作进程 + 隐身 + 中文字体
+obscura serve --workers 4 --stealth --font-dir /usr/share/fonts --port 9222
 ```
 
 #### 7.2 与 Puppeteer 集成
@@ -956,11 +1035,38 @@ grep "keyword" "$TEMP_DIR/page.html"
 
 ---
 
-## 🔄 版本历史
+## 🔄 Obscura 上游版本历史
 
-- **v1.0.0** (基础版): 网页内容提取、JavaScript 执行
-- **v1.1.0** (进阶版): 截图、批量抓取、Cookie 管理
-- **v1.2.0** (完整版): 隐身模式、CDP 服务器、代理支持
+> 以下为 Obscura 上游版本更新摘要（与技能版本无关）
+
+- **v0.2.4** (最新): 自动化可靠性提升（worker崩溃自动恢复、iframe帧拆除崩溃修复）、减少不必要等待、输入/页面生命周期更接近浏览器行为；CDP服务器新增 `--font-dir` 参数支持中文字体加载；安全增强（SSRF门禁强化、same-origin pushState/replaceState等）
+- **v0.2.3**: CDP/MCP 暴露端口新增鉴权（`OBSCURA_CDP_TOKEN` / `OBSCURA_MCP_TOKEN`）、V8 升级至 150.4、并发会话更可靠、渲染性能与正确性提升、字体数据库复用优化
+- **v0.2.2**: Playwright 表单填写完整支持、`Input.insertText` 实现、chromiumoxide/spider 等生成式 CDP 客户端正式可用、二进制内容端对端传输修复
+- **v0.2.1**: 请求拦截与全局隐身模式
+- **v0.2.0**: CDP 多 worker 支持、`obscura-worker` 批量抓取
+- **v0.1.x**: 初期版本，基础 fetch/serve/scrape 功能
+
+---
+
+## 🆕 v0.2.4 新增：安全认证配置
+
+v0.2.3 起，CDP/MCP 服务对**非回环地址**绑定强制要求 Bearer Token（至少32字节）。
+
+```bash
+# 生成 token
+TOKEN=$(openssl rand -hex 32)
+
+# 启动带认证的 CDP 服务
+OBSCURA_CDP_TOKEN="$TOKEN" obscura serve --host 0.0.0.0 --port 9222
+
+# Puppeteer 连接时传入 token
+# extraHTTPHeaders: { Authorization: `Bearer ${TOKEN}` }
+```
+
+```bash
+# MCP 服务认证
+OBSCURA_MCP_TOKEN="$TOKEN" obscura mcp --http --host 0.0.0.0 --port 3000
+```
 
 ---
 
