@@ -15,8 +15,11 @@ Alternative backend to tts.py, driving the SenseAudio WEB console channel
   POST https://platform.senseaudio.cn/api/voice/tts
   → JSON {download_url} → GET → WAV (24kHz/16bit/mono)
 
-Why: the web channel exposes 74 voices (vs 34 via the open API) and honors
-"限免使用" promotions, so SVIP voices are usable without a paid plan.
+Why: the web channel exposes 74 voices/167 labels (vs 34 via the open API),
+including podcast-oriented multi-emotion roles. Non-VIP voices are billed
+per character (credits first, then voucher/cash; a ~15-min episode costs
+about ¥3); VIP voices (is.vip set) require a paid plan and are rejected
+up-front by the built-in pre-check.
 
 Caveats (inherent to the web channel, by design "取巧"):
   - Auth is a browser session token (SENSE_WEB_TOKEN, Paseto v2), NOT an
@@ -177,7 +180,9 @@ def fetch_voice_catalog(token, force=False):
         try:
             cache = json.load(open(CATALOG_CACHE, encoding="utf-8"))
             if now - cache.get("fetched_at", 0) < CATALOG_TTL:
-                return cache["voices"]
+                # 旧缓存没有 vip 字段（限免结束后新增）→ 视为过期重抓
+                if all("vip" in e for e in cache["voices"].values()):
+                    return cache["voices"]
         except Exception:
             pass  # corrupt cache → refetch
 
@@ -186,11 +191,12 @@ def fetch_voice_catalog(token, force=False):
     for item in body.get("list", []):
         uuid = item.get("id", "")
         name = item.get("voice_name", "")
+        vip = bool((item.get("is") or {}).get("vip"))
         for m in item.get("models", []):
             label = m.get("label", "")
             if label:
                 voices[label] = {"uuid": uuid, "name": name,
-                                 "emotion": m.get("emotion", "")}
+                                 "emotion": m.get("emotion", ""), "vip": vip}
     try:
         json.dump({"fetched_at": now, "voices": voices},
                   open(CATALOG_CACHE, "w", encoding="utf-8"), ensure_ascii=False)
@@ -322,11 +328,28 @@ def process_lines(workdir, target_line=None, delay=None):
     voices_dir = os.path.join(workdir, "voices")
     os.makedirs(voices_dir, exist_ok=True)
 
+    # VIP 音色预检：免费版 token 无法合成 is.vip 有值的音色，
+    # 提前报清楚而不是等远端逐行失败（省字符额度与时间）
+    pending = [r for i, r in enumerate(rows)
+               if target_line is None or i == target_line - 1]
+    todo = [r for r in pending if str(r.get("done", "")).strip() != "1"]
+    vip_hits = sorted({r.get("voice_id", "") for r in todo
+                       if (catalog.get(r.get("voice_id", "")) or {}).get("vip")})
+    if vip_hits:
+        safe_print("[FATAL] 以下音色为 VIP 付费档（is.vip），免费版 web token 无法使用：")
+        for v in vip_hits:
+            safe_print(f"    {v}（{catalog[v]['name']}）")
+        safe_print("  请改用免费档音色（见 references/sense_web_voices.md），"
+                   "或升级套餐后重跑。已选免费档替代的行可直接重跑，VIP 行需先改 voice_id。")
+        sys.exit(1)
+
     if delay is None:
         delay = 0.3
 
+    free_cnt = sum(1 for e in catalog.values() if not e.get("vip"))
     safe_print(f"[INFO] 后端: 商汤 SenseAudio 网页版通道（{WEB_MODEL}，"
-               "限免期间通常免费；音色 {0} 个标签）".format(len(catalog)))
+               "按字符计费：优先扣积分，超限后代金券→现金；音色 {0} 标签，"
+               "其中免费档 {1} 个）".format(len(catalog), free_cnt))
 
     total = len(rows)
     done_count = sum(1 for r in rows if str(r.get("done", "")).strip() == "1")
