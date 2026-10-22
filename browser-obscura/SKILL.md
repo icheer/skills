@@ -1,8 +1,18 @@
+---
+name: browser-obscura
+description: >
+  Browser Obscura - 无头浏览器自动化技能。基于 Rust 的 Obscura 引擎,
+  支持 fetch 单页抓取(HTML/Text/Markdown/Links/Assets/Cookies/截图/JS 执行)、
+  scrape 批量抓取、serve CDP 服务器(Puppeteer/Playwright 可连)、
+  mcp 面向 Agent 的浏览器工具集、隐身反指纹模式、代理、会话持久化。
+  当任务需要渲染 JS 的页面抓取、页面截图、批量采集、或无头浏览器自动化时使用。
+---
+
 # Browser Obscura - 无头浏览器自动化技能
 
 一个轻量级、高性能的无头浏览器自动化工具,基于 Rust 编写的 Obscura 引擎。
 
-> **当前已知最新版本**: Obscura v0.2.4
+> **当前已知最新版本**: Obscura v0.2.5
 > **升级**: 运行 `bash scripts/install-obscura.sh` (Linux/macOS) 或 `.\scripts\install-obscura.ps1` (Windows)
 
 ## 📋 功能概览
@@ -13,7 +23,8 @@
 - **批量抓取**: 并发处理多个 URL
 - **隐身模式**: 反指纹和追踪器拦截
 - **CDP 集成**: 支持 Puppeteer/Playwright 连接
-- **中文字体支持**: 通过 `--font-dir` 加载本地字体 (v0.2.4+)
+- **MCP 服务器**: 面向 Agent 的浏览器自动化工具集
+- **中文字体支持**: `serve`/`mcp` 通过 `--font-dir` 加载本地字体
 
 ## 🚀 快速开始
 
@@ -188,6 +199,21 @@ obscura fetch https://example.com --dump text --quiet | grep "keyword"
 
 # 提取链接并过滤
 obscura fetch https://example.com --dump links | grep "\.pdf$"
+```
+
+#### 1.5 批量原始抓取 (`fetch --file`)
+
+`--file` 让 fetch 进入批处理模式:每个 URL 以原始 HTTP 响应流式输出(`--dump original` 语义),每个 URL 打印一行 JSON 状态。适合批量下载二进制/非渲染内容;需要渲染后的 DOM 输出请用 `scrape`。
+
+```bash
+# 从文件读取 URL(每行一个,# 开头为注释)
+obscura fetch --file urls.txt
+
+# 从 stdin 读取
+cat urls.txt | obscura fetch --file -
+
+# 并发抓取(默认 1,仅批处理模式生效)
+obscura fetch --file urls.txt --concurrency 5
 ```
 
 ---
@@ -417,11 +443,11 @@ obscura --stealth \
 
 ### 7. 中文字体支持 (`--font-dir`)
 
-> **新增于 v0.2.4**（仅限 `render` 构建版本，即带截图功能的版本）
+> 仅限 `render` 构建版本(即带截图功能的版本)
 
-Obscura 内置字体集不含中文，截图时汉字会显示为方块。`--font-dir` 让你指向系统或自定义字体目录，引擎会在每个 worker 启动时递归扫描并加载其中所有字体文件（`.ttf`、`.otf`、`.woff2` 等）。
+Obscura 内置字体集不含中文,截图时汉字会显示为方块。`--font-dir` 让你指向系统或自定义字体目录,引擎会在每个 worker 启动时递归扫描并加载其中所有字体文件(`.ttf`、`.otf`、`.woff2` 等)。
 
-此参数**只能在 `serve` 子命令**上使用，可重复指定多个目录。
+此参数在 `serve` 和 `mcp` 子命令上可用,可重复指定多个目录。
 
 #### 7.1 快速解决截图乱码
 
@@ -480,7 +506,7 @@ obscura fetch "https://zh.wikipedia.org/wiki/汉字" \
   --screenshot /tmp/cn-test.png
 ```
 
-> **注意**: `obscura fetch` 目前无法直接继承 `serve` 的字体配置。`--font-dir` 目前仅对 `obscura serve` 生效——通过 CDP/Puppeteer/Playwright 连接后才能使用已加载的字体。直接运行 `obscura fetch --screenshot` 暂不支持 `--font-dir`。
+> **注意**: `obscura fetch` 无法直接使用 `--font-dir`——该参数仅对 `obscura serve` 和 `obscura mcp` 生效。直接运行 `obscura fetch --screenshot` 暂不支持加载自定义字体。
 
 ---
 
@@ -508,7 +534,38 @@ obscura serve --font-dir /usr/share/fonts/noto --port 9222
 obscura serve --workers 4 --stealth --font-dir /usr/share/fonts --port 9222
 ```
 
-#### 7.2 与 Puppeteer 集成
+#### 8.2 连接数限制与 Worker 回收
+
+长时运行/多客户端场景下,用这些参数控制资源占用:
+
+```bash
+# 限制每个 worker 的最大 CDP 连接数（默认 128，超出返回 503 而非排队）
+# 多 worker 时该限额按 worker 计,服务端总上限 = workers × max-connections
+obscura serve --max-connections 64 --port 9222
+
+# Worker 回收（均需 --workers > 1，防止内存/状态累积）:
+obscura serve --workers 4 \
+  --worker-max-connections 500 \   # 服务 N 个连接后回收换新
+  --worker-max-rss 2048 \          # 常驻内存超 2048MB 回收（仅 Linux，每 2s 采样）
+  --worker-max-age 3600 \          # 运行满 3600s 回收
+  --worker-drain-timeout 60 \      # 被替换的 worker 最多再服务 60s（默认 120）
+  --port 9222
+```
+
+#### 8.3 其他 serve 选项
+
+```bash
+# 静默日志（页面大量 console 告警时降噪）
+obscura serve --quiet --port 9222
+
+# 就绪文件：V8 初始化完成、端口绑定后原子写入地址，供脚本/systemd 等待
+obscura serve --ready-file /tmp/obscura.ready --port 9222
+
+# 允许 CDP 客户端访问 file:// URL（默认关闭以防读取本地文件；仅可信网络下开启）
+obscura serve --allow-file-access --port 9222
+```
+
+#### 8.4 与 Puppeteer 集成
 
 ```javascript
 import puppeteer from 'puppeteer-core';
@@ -529,7 +586,7 @@ console.log(stories);
 await browser.close();
 ```
 
-#### 7.3 与 Playwright 集成
+#### 8.5 与 Playwright 集成
 
 ```javascript
 import { chromium } from 'playwright-core';
@@ -549,23 +606,70 @@ await browser.close();
 
 ---
 
-### 8. 高级选项
+### 9. MCP 服务器模式 (`obscura mcp`)
 
-#### 8.1 自定义 User-Agent
+面向 Agent/LLM 的浏览器自动化工具集,暴露 `browser_snapshot`、`browser_evaluate`、`browser_click`、`browser_type`、`browser_fill_form`、`browser_wait_for`、`browser_wait_for_function`、`browser_navigate`、`browser_tabs`、`browser_take_screenshot` 等工具。
+
+```bash
+# stdio 模式（供 MCP 客户端以子进程方式拉起）
+obscura mcp
+
+# HTTP 模式（默认 127.0.0.1:3000）
+obscura mcp --http --port 3000
+
+# 常用组合：隐身 + 代理 + 中文字体
+obscura mcp --http --stealth --proxy socks5://proxy:1080 \
+  --font-dir /usr/share/fonts --port 3000
+```
+
+**工具行为要点:**
+- `browser_snapshot`: 返回可操作引用(accessible name、控件状态、可见文本),后续动作用引用定位;过期引用会在动作前被拒绝
+- `browser_evaluate`: 脚本执行一次、自动 await 返回的 Promise;失败时返回 `isError: true` 而非报错中断
+- `browser_wait_for_function`: 谓词式等待——轮询执行一段 JS 直到返回真值或超时,比固定 `--wait` 更适合等异步渲染完成
+- `browser_fill_form`: 某字段填写失败时在提交前停止,不会带着残缺数据提交
+- 标签页切换保留运行时状态(全局变量、事件监听、pending Promise)
+
+---
+
+### 10. 服务认证（CDP/MCP Token）
+
+CDP/MCP 服务对**非回环地址**绑定强制要求 Bearer Token(至少32字节)。
+
+```bash
+# 生成 token
+TOKEN=$(openssl rand -hex 32)
+
+# 启动带认证的 CDP 服务
+OBSCURA_CDP_TOKEN="$TOKEN" obscura serve --host 0.0.0.0 --port 9222
+
+# Puppeteer 连接时传入 token
+# extraHTTPHeaders: { Authorization: `Bearer ${TOKEN}` }
+```
+
+```bash
+# MCP 服务认证
+OBSCURA_MCP_TOKEN="$TOKEN" obscura mcp --http --host 0.0.0.0 --port 3000
+```
+
+---
+
+### 11. 高级选项
+
+#### 11.1 自定义 User-Agent
 
 ```bash
 obscura --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)" \
   fetch https://example.com --dump text
 ```
 
-#### 8.2 遵守 robots.txt
+#### 11.2 遵守 robots.txt
 
 ```bash
 # 默认不遵守，启用此选项会检查 robots.txt
 obscura --obey-robots fetch https://example.com --dump text
 ```
 
-#### 8.3 允许本地网络访问
+#### 11.3 允许本地网络访问
 
 ```bash
 # 默认阻止 localhost/RFC1918/链路本地请求
@@ -573,7 +677,7 @@ obscura --obey-robots fetch https://example.com --dump text
 obscura --allow-private-network fetch http://localhost:3000 --dump text
 ```
 
-#### 8.4 V8 引擎参数
+#### 11.4 V8 引擎参数
 
 ```bash
 # 调整 V8 堆大小
@@ -581,7 +685,7 @@ obscura --v8-flags "--max-old-space-size=4096" \
   fetch https://example.com --dump text
 ```
 
-#### 8.5 环境变量
+#### 11.5 环境变量
 
 ```bash
 # 脚本执行超时 (毫秒)
@@ -1032,41 +1136,6 @@ grep "keyword" "$TEMP_DIR/page.html"
 4. **避免检测**: 结合 `--stealth`、代理和随机延迟
 5. **数据管道**: 利用 Unix 管道和 `jq` 处理 JSON 输出
 6. **批量作业**: 使用 `xargs` 或 `parallel` 并行处理多个 URL
-
----
-
-## 🔄 Obscura 上游版本历史
-
-> 以下为 Obscura 上游版本更新摘要（与技能版本无关）
-
-- **v0.2.4** (最新): 自动化可靠性提升（worker崩溃自动恢复、iframe帧拆除崩溃修复）、减少不必要等待、输入/页面生命周期更接近浏览器行为；CDP服务器新增 `--font-dir` 参数支持中文字体加载；安全增强（SSRF门禁强化、same-origin pushState/replaceState等）
-- **v0.2.3**: CDP/MCP 暴露端口新增鉴权（`OBSCURA_CDP_TOKEN` / `OBSCURA_MCP_TOKEN`）、V8 升级至 150.4、并发会话更可靠、渲染性能与正确性提升、字体数据库复用优化
-- **v0.2.2**: Playwright 表单填写完整支持、`Input.insertText` 实现、chromiumoxide/spider 等生成式 CDP 客户端正式可用、二进制内容端对端传输修复
-- **v0.2.1**: 请求拦截与全局隐身模式
-- **v0.2.0**: CDP 多 worker 支持、`obscura-worker` 批量抓取
-- **v0.1.x**: 初期版本，基础 fetch/serve/scrape 功能
-
----
-
-## 🆕 v0.2.4 新增：安全认证配置
-
-v0.2.3 起，CDP/MCP 服务对**非回环地址**绑定强制要求 Bearer Token（至少32字节）。
-
-```bash
-# 生成 token
-TOKEN=$(openssl rand -hex 32)
-
-# 启动带认证的 CDP 服务
-OBSCURA_CDP_TOKEN="$TOKEN" obscura serve --host 0.0.0.0 --port 9222
-
-# Puppeteer 连接时传入 token
-# extraHTTPHeaders: { Authorization: `Bearer ${TOKEN}` }
-```
-
-```bash
-# MCP 服务认证
-OBSCURA_MCP_TOKEN="$TOKEN" obscura mcp --http --host 0.0.0.0 --port 3000
-```
 
 ---
 
