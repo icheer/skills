@@ -12,7 +12,7 @@ description: >
 
 一个轻量级、高性能的无头浏览器自动化工具,基于 Rust 编写的 Obscura 引擎。
 
-> **当前已知最新版本**: Obscura v0.2.5
+> **当前已知最新版本**: Obscura v0.2.6
 > **升级**: 运行 `bash scripts/install-obscura.sh` (Linux/macOS) 或 `.\scripts\install-obscura.ps1` (Windows)
 
 ## 📋 功能概览
@@ -132,6 +132,7 @@ obscura fetch https://example.com --eval "
 })()
 "
 ```
+- 页面脚本中的 `fetch()` 无法设置浏览器禁改的请求头(`Cookie`、`User-Agent`、`Host` 等),此类头会被忽略——需要带这些头请求时用外层 `--user-agent`/`--storage-dir` 等选项控制
 
 #### 1.3 等待策略
 
@@ -149,6 +150,10 @@ obscura fetch https://example.com --wait-until networkidle2
 # 等待网络完全空闲 (500ms 内无任何网络活动)
 obscura fetch https://example.com --wait-until networkidle0
 ```
+
+> **注意**: `networkidle*` 严格遵守 `--timeout` 截止时间——若页面持续有网络活动
+> (统计埋点、轮询、WebSocket 等),到时仍未空闲会直接**报错**,而不是静默继续。
+> 这类页面改用 `load` + `--selector` / `--wait` 组合。
 
 **等待 CSS 选择器**
 ```bash
@@ -439,6 +444,9 @@ obscura --stealth \
   fetch https://example.com --dump text
 ```
 
+> **注意**: 显式指定的 `--user-agent` 会**覆盖**隐身模式的随机 UA 指纹,
+> 同时作用于请求头和 `navigator.userAgent`。不指定则使用隐身模式自带的指纹。
+
 ---
 
 ### 7. 中文字体支持 (`--font-dir`)
@@ -561,7 +569,7 @@ obscura serve --quiet --port 9222
 # 就绪文件：V8 初始化完成、端口绑定后原子写入地址，供脚本/systemd 等待
 obscura serve --ready-file /tmp/obscura.ready --port 9222
 
-# 允许 CDP 客户端访问 file:// URL（默认关闭以防读取本地文件；仅可信网络下开启）
+# 允许访问 file:// URL（默认在网络加载层统一拦截——包括页面脚本发起的请求和子资源，防读取本地文件；仅可信网络下开启）
 obscura serve --allow-file-access --port 9222
 ```
 
@@ -604,6 +612,53 @@ await page.screenshot({ path: 'wikipedia.png', fullPage: true });
 await browser.close();
 ```
 
+#### 8.6 请求拦截 (Mock 导航请求)
+
+主文档请求可在传输前被拦截并由客户端直接响应,适合离线测试、mock 服务端数据或复现难以构造的服务端状态。
+
+**Playwright**
+```javascript
+import { chromium } from 'playwright-core';
+
+const browser = await chromium.connectOverCDP({ endpointURL: 'ws://127.0.0.1:9222' });
+const page = await browser.contexts()[0].newPage();
+
+await page.route('**/api/data', route =>
+  route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ mock: true }),
+  })
+);
+
+await page.goto('https://app.example.com');
+await browser.close();
+```
+
+**Puppeteer**
+```javascript
+import puppeteer from 'puppeteer-core';
+
+const browser = await puppeteer.connect({
+  browserWSEndpoint: 'ws://127.0.0.1:9222/devtools/browser',
+});
+const page = await browser.newPage();
+await page.setRequestInterception(true);
+
+page.on('request', req => {
+  if (req.isNavigationRequest()) {
+    req.respond({ status: 200, contentType: 'text/html', body: '<h1>Mocked</h1>' });
+  } else {
+    req.continue();
+  }
+});
+
+await page.goto('https://example.com');
+await browser.close();
+```
+
+> 拦截响应会保留二进制 body 和重复的 `Set-Cookie` 头;`abort()`、重定向等也按预期工作。
+
 ---
 
 ### 9. MCP 服务器模式 (`obscura mcp`)
@@ -624,8 +679,8 @@ obscura mcp --http --stealth --proxy socks5://proxy:1080 \
 
 **工具行为要点:**
 - `browser_snapshot`: 返回可操作引用(accessible name、控件状态、可见文本),后续动作用引用定位;过期引用会在动作前被拒绝
-- `browser_evaluate`: 脚本执行一次、自动 await 返回的 Promise;失败时返回 `isError: true` 而非报错中断
-- `browser_wait_for_function`: 谓词式等待——轮询执行一段 JS 直到返回真值或超时,比固定 `--wait` 更适合等异步渲染完成
+- `browser_evaluate`: 脚本执行一次、自动 await 返回的 Promise;失败时返回 `isError: true` 而非报错中断;多次调用之间顶层 `const`/`let` 声明保留可访问,可在前一步声明辅助函数供后续复用
+- `browser_wait_for_function`: 谓词式等待——轮询执行一段 JS 直到返回真值或超时,比固定 `--wait` 更适合等异步渲染完成;等待期间页面任务照常驱动,依赖网络回调的谓词也能完成
 - `browser_fill_form`: 某字段填写失败时在提交前停止,不会带着残缺数据提交
 - 标签页切换保留运行时状态(全局变量、事件监听、pending Promise)
 
@@ -949,6 +1004,21 @@ obscura fetch https://slow-site.example --timeout 120
 
 # 或调整脚本超时
 export OBSCURA_SCRIPT_DEADLINE_MS=60000
+```
+
+### 问题: networkidle 一直等不到
+
+部分页面持续有网络活动(统计埋点、轮询、WebSocket),`--wait-until networkidle0/2` 永远等不到空闲,到 `--timeout` 截止会直接报错而不是静默继续:
+
+```bash
+# 方案 1: 页面确实需要很久才安静,放宽超时
+obscura fetch https://example.com --wait-until networkidle0 --timeout 120
+
+# 方案 2: 不依赖网络空闲,改用 load + 元素/固定等待
+obscura fetch https://example.com \
+  --wait-until load \
+  --selector "#main-content" \
+  --wait 2
 ```
 
 ---

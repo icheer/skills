@@ -161,7 +161,7 @@ bash scripts/stealth-crawler.sh https://example.com socks5://user:pass@proxy:108
 
 - **快速静态页面**: `--wait-until domcontentloaded`
 - **普通页面**: `--wait-until load` (默认)
-- **SPA 应用**: `--wait-until networkidle0`
+- **SPA 应用**: `--wait-until networkidle0` (持续有网络活动的页面会等到超时报错,可改用 `--selector`)
 - **动态内容**: 添加 `--wait 2-3` 秒
 
 ### 2. 处理错误和重试
