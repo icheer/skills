@@ -127,14 +127,17 @@ bash {{INSkillDir}}/scripts/ctx.sh scrape https://example.com/post
 # --rules '{"title":{"selector":"h1"}}'  parse 模式自定义CSS(无LLM)
 # --parser reddit-post        预置解析器(见下,与 --rules 互斥,无LLM)
 # 注意: --query/--schema/--rules/--parser 会自动开启对应格式,不必再写 --formats parse/json/highlights
-# --prefer-md                 优先用站点自带的 Markdown 源(文档站常更干净,保留代码块/锚点)
+# --prefer-md                 优先用站点自带的 Markdown 源(文档站常更干净,保留代码块/锚点);
+#                              自带 fallback 到 HTML 转换;命中 markdown-direct 时内容过滤/链接图片选项不生效
+#                              (raw 强制纯 markdown-direct 且页面无发布版会报 NO_PUBLISHED_MARKDOWN,不扣费)
 # --page-numbers              PDF 每页加 <!-- page N --> 标记(便于引用/按页切分)
+# --max-age MS                缓存接受上限: scrape/batch 最大 365 天,同步 crawl 最大 30 天;0=强制重抓(等价 --fresh)
 # --fresh                     绕过缓存强制重抓
 # --country jp                出口地区(2字母)
-# --wait-for 2000             等 JS 渲染(毫秒或 CSS 选择器)
+# --wait-for 2000             等 JS 渲染(毫秒或 CSS 选择器,默认 500ms)
 # --full-page                 整页截图(渲染慢,长页可达数分钟,已自动放宽超时)
 # --shot-selector "#hero"     只截某个元素(矩形区域/viewport 尺寸/深色主题等用 raw 传 screenshotParams)
-# --timeout 30000 --partial   超时返回部分结果
+# --timeout 30000             超时即 408 失败(不扣费);加 --partial 改为返回部分结果(照常扣费,需 ≥5000ms)
 ```
 
 响应中每个格式有独立的 `success` 标志(`true/false/null`),单项失败不影响其他项——**读数据前先看 success**。
@@ -144,7 +147,8 @@ YouTube 链接用 markdown 格式即可得到带时间戳的转写;公开 PDF/�
 **预置解析器**(`--parser <name>`,1 credit,结构化输出,无需写规则;自动开启 parse 格式):
 `google-maps` / `google-maps-reviews`(`--parser-sort newest|oldest|relevant|highest|lowest`, `--parser-limit ≤1000`)、`google-play(-reviews)`、`app-store(-reviews)`、`g2-reviews`、`instagram-{profile,post,feed}`、`tiktok-{profile,video,feed,comments,followers,following,user-search}`、`reddit-{post,search,subreddit,user}`(reddit 可用 `--parser-limit ≤1000` 控制条数)、`yelp-{search,reviews}`、`emails`、`phone-numbers`、`links`。
 社交平台无需登录,`tiktok-video` 返回可直接下载的 `video_url`。
-排序/翻页注意:`--parser-sort`/`--parser-limit` 只对 maps-reviews 和 reddit 生效;**Reddit 的评论排序要写在 URL 上**(`...?sort=top|new|qa`),Yelp 翻页用 URL `?start=20`;reddit/yelp 评论带 `author.id`/`author.url`,可跨页识别同一评论者。
+排序/翻页注意:`--parser-sort` 仅 maps-reviews、`--parser-limit` 仅 maps-reviews 与 reddit 四解析器有效(`oldest` 按精确时间戳取最早);**Reddit 的评论排序要写在 URL 上**(`...?sort=top|new|qa`),Yelp 翻页用 URL `?start=20`;reddit/yelp 评论带 `author.id`/`author.url`,可跨页识别同一评论者。
+行为边界:`emails/phone-numbers/links` 跑在过滤后的页面 HTML 上(吃 `--wait-for`/`--no-main-content`);**其余解析器走独立数据源,忽略内容过滤与等待参数**,Maps/商店固定美国出口;评论上限 Google Play 200、App Store 500(无翻页),G2 固定最近 25 条且只保留 URL 星级过滤。
 
 ### extract — 整站结构化提取
 
@@ -162,7 +166,8 @@ bash {{INSkillDir}}/scripts/ctx.sh extract https://example.com/pricing \
 
 ```bash
 bash {{INSkillDir}}/scripts/ctx.sh answers "对比 Vite 和 webpack 2026 年的生态与性能数据"
-# 默认 --mode fast(10 credits);ultra 更强但 100 credits,重要问题才用
+# 默认 --mode fast(10 credits)。⚠ API 原生默认是 ultra(100 credits)——本脚本刻意强制 fast 保护免费额度,
+# raw 裸调 /web/answers 不传 mode 会花 100 credits;重要问题才用 --mode ultra
 # --json-format '{"items":[{"name":"","verdict":""}]}'  指定返回结构
 ```
 
@@ -225,6 +230,7 @@ bash {{INSkillDir}}/scripts/ctx.sh monitor list | run <id> | rm <id> | limits   
 ```
 
 默认 AI 判断哪些变化值得报告(过滤常青内容/重复转载);`--exact` 改为逐条报告。search 型每次 run 2 credits,变更带 `matched_urls`/`evidence`。
+另有 sitemap 型(1 credit/run)与 extract 型(10 credits/run)监控,需要时用 raw `POST /monitors` 创建。
 
 ### map / crawl — 站点级
 
@@ -251,7 +257,8 @@ bash {{INSkillDir}}/scripts/ctx.sh news --domain anthropic.com --limit 10       
 # 过滤: --source-country us,gb --languages en,zh(文章语言)
 ```
 
-brand 只能指定一种查询方式(`--domain/--name/--email/--ticker/--direct-url/--transaction`)。
+brand 只能指定一种查询方式(`--domain/--name/--email/--ticker/--direct-url/--transaction`,`--name` 限 3-30 字符)。
+logo 按 `type/mode/分辨率` 挑,别默认取 `logos[0]`(可能拿到反色或低清版本)。
 公司数据是"发现的资料"而非法定记录,地址/人数/分类可能有缺失或过时。
 
 ### parse — 文档解析
@@ -266,9 +273,10 @@ bash {{INSkillDir}}/scripts/ctx.sh parse report.pdf --ocr --page-numbers   # 扫
 
 ```bash
 bash {{INSkillDir}}/scripts/ctx.sh raw POST /web/scrape '{"url":"https://example.com","formats":{"screenshot":true},"screenshotParams":{"area":{"x":0,"y":0,"width":1200,"height":800}},"sharedParams":{"theme":"dark"}}'
-bash {{INSkillDir}}/scripts/ctx.sh raw POST /utility/prefetch '{"type":"domain","domain":"stripe.com"}'  # 0 credits,预热 brand 缓存
 bash {{INSkillDir}}/scripts/ctx.sh raw GET /org/usage        # 0 credits,查余额
 bash {{INSkillDir}}/scripts/ctx.sh raw GET "/web/naics?input=<urlencode>"   # 行业代码分类
+# ⚠ raw 裸调 /web/answers 不传 mode 时服务端默认 ultra(100 credits)!本脚本 answers 子命令已强制默认 fast
+# utility/prefetch 为付费计划专属(免费 key 返回 403);发现 API 行为与文档不符可用 raw POST /feedback 上报(0 credits,带响应里的 request_id)
 ```
 
 raw 调用 `/web/scrape` 时截图/bytes 同样自动落盘,stdout 只留文件路径。
@@ -282,16 +290,18 @@ raw 调用 `/web/scrape` 时截图/bytes 同样自动落盘,stdout 只留文件�
 | 状态 | 含义 | 处理 |
 |---|---|---|
 | 400 | 参数错误 / 目标站屏蔽(`WEBSITE_BLOCKED`)/ PDF 仅图片 | 换 URL、加 `--fresh`、parse 加 `--ocr`;有 fallback 就用 |
-| 401/403 | key 失效 / 权限或付费功能 | 告知用户检查 key;若 `error_code=ACCESS_POLICY_DENIED`(不扣费)是组织级域名策略拦截,换域名即可。**不要创建多个账号轮换,会被封号** |
+| 200+单项失败 | scrape 某格式 `success:false`(选择器错/内容超限/被拦),其余输出正常 | 看 `isPartial` 与该格式 `code` 字段;stdout 已自动告警;别把 `data:null` 当空页 |
+| 401/403 | key 失效 / 权限或付费功能 | 告知用户检查 key;`INSUFFICIENT_PERMISSIONS` 带 `required_permission`(受限 key 缺 scope);`BATCH_LIMIT_EXCEEDED`=活跃 batch 太多;若 `error_code=ACCESS_POLICY_DENIED`(不扣费)是组织级域名策略拦截,换域名即可。**不要创建多个账号轮换,会被封号** |
 | 402 | 积分不足(`USAGE_EXCEEDED`) | `raw GET /org/usage` 查余额;被拒操作不扣费,不要原样重试 |
-| 404 | 目标不存在 | 视为正常空结果 |
-| 408 | 超时(`--timeout` 设的) | 提高 `--timeout`、加 `--partial`、或 brand 先 prefetch |
+| 404 | 目标不存在 | 视为正常空结果;注意 scrape 目标 404 仍收基础 1 credit(+product 再+1) |
+| 408 | 超时(`--timeout` + fail 模式,不扣费) | 提高 `--timeout`、加 `--partial`(改拿部分结果,照常扣费)、或 brand 冷域名属正常 |
 | 409 | batch/monitor 状态冲突(如未完成的 batch 取 results) | 先 status 等完成再取 |
-| 429 | 组织并发限制或每分钟请求上限 | 降并行度/改串行,稍后重试(被拒请求不扣费) |
-| 422 | 输入限制(如免费邮箱域名/监控数量超配额) | 改输入,不要原样重试 |
+| 413/415 | 内容过大(如 parse 上传 >50MiB)/格式不支持 | 换小文件或支持的格式 |
+| 429 | 组织并发限制或每分钟请求上限 | 降并行度/改串行,稍后重试(被拒请求不扣费);脚本不做自动重试 |
+| 422 | 输入限制(如免费邮箱域名/监控数量超配额/brand 名称非 3-30 字符) | 改输入,不要原样重试 |
 | 5xx | 服务端瞬时故障 | 隔几秒重试一次 |
 
-**不要**对 400/401/402/403/422 原样重试。
+**不要**对 400/401/402/403/422 原样重试;网络层失败(HTTP 000)时服务端可能已计费,重试前先查余额。
 
 ## 最佳实践
 
@@ -300,7 +310,8 @@ raw 调用 `/web/scrape` 时截图/bytes 同样自动落盘,stdout 只留文件�
 3. **串行为默认**:并发限制按组织计——新组织按并发数(Free=2、Developer=10、Pro=100、Growth=250、Scale=500),老组织按每分钟请求数;超限立刻 429。**不要**用多个账号 key 来提高并发(官方会检测并封号);串行逐条执行完全够用;收到 429 降速稍后重试
 4. **单 key 原则**:只用一个 key。给用户配置指导时明确说明:多账号轮询会被检测封禁、积分清零,免费 1000 积分/月够用
 5. **来源**:引用 scrape/search/answers 的内容时附原始 URL
-6. **给用户报账**:多次调用后可 `raw GET /org/usage`(0 credits)查余额
+6. **给用户报账**:多次调用后可 `raw GET /org/usage`(0 credits)查余额;摘要行的 `req:` 是 request_id 前 8 位,遇到 API 行为与文档不符可 `raw POST /feedback` 带 id 上报(0 credits)
+7. **重试由你判断**:脚本不做自动重试(防止超时/限流后重发 POST 造成双倍扣费);网络失败(HTTP 000)时服务端可能已处理,重试前先查余额
 
 ## 参考资料
 

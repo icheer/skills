@@ -177,21 +177,22 @@ api_request() {  # $1=method $2=path
   key="${KEYS[0]}"
   (( VERBOSE )) && log "请求: $method $url"
 
-  local args=(-sS --max-time "$CURL_TIMEOUT" --retry 2 --retry-delay 1
+  local args=(-sS --max-time "$CURL_TIMEOUT"
     -X "$method" -D "$HDR_FILE" -o "$BODY_FILE" -w '%{http_code}'
     -H "Authorization: Bearer $key")
+  # 不用 curl --retry: 它会把超时/429/5xx 自动重发,POST 重发可能双倍扣费(如 answers ultra)
   [[ -n "$REQ_BODY" ]] && args+=(-H "Content-Type: $REQ_CT" --data-binary "@$REQ_BODY")
   code="$(curl "${args[@]}" "$url" 2>/dev/null)" || code="000"
 
   if [[ "$code" == "000" ]]; then
-    warn "网络请求失败(curl 超时/断连),已内置重试仍失败"
+    warn "网络请求失败(curl 超时/断连)。注意:服务端可能已收到并计费,重试前用 raw GET /org/usage 核对余额"
     USED_KEY=""; HTTP_CODE="$code"
     return 1
   fi
 
   USED_KEY="$key"; HTTP_CODE="$code"
   if [[ "$code" == "401" || "$code" == "403" ]]; then
-    warn "HTTP $code:key 失效/无权限(也可能是多账号轮询触发了封禁)。不要创建多个账号。"
+    warn "HTTP $code:key 失效/无权限/付费功能(也可能是多账号轮询触发了封禁)。不要创建多个账号。"
   elif [[ "$code" == "402" ]]; then
     warn "402 = 积分不足(USAGE_EXCEEDED):raw GET /org/usage 查余额;被拒的操作不扣费,充值/等待月度恢复后重试"
   elif [[ "$code" == "429" ]]; then
@@ -216,13 +217,22 @@ def placeholder($shot;$bytes):
 emit() {
   local view="$1"; shift
   local f="$BODY_FILE"
-  local credits rem cache size
+  local credits rem cache size reqid
   credits="$(jq -r '.key_metadata.credits_consumed  // "-"' "$f" 2>/dev/null)" || credits="-"
   rem="$(jq -r '.key_metadata.credits_remaining // "-"' "$f" 2>/dev/null)" || rem="-"
   cache="$(jq -r '.cache_metadata.status // "-"' "$f" 2>/dev/null)" || cache="-"
   size="$(wc -c <"$f" 2>/dev/null | tr -d ' ')"
+  reqid="$(jq -r '.request_id // "-"' "$f" 2>/dev/null)" || reqid="-"
+  [[ "$reqid" == "-" || -z "$reqid" ]] && reqid="-" || reqid="${reqid:0:8}"
 
-  echo "[context.dev] $OP | HTTP $HTTP_CODE | credits: ${credits:--} (剩余 ${rem:--}) | cache: ${cache:--} | key: $(mask_key "${USED_KEY:-none}") | 响应 ${size:-0} bytes"
+  echo "[context.dev] $OP | HTTP $HTTP_CODE | credits: ${credits:--} (剩余 ${rem:--}) | cache: ${cache:--} | key: $(mask_key "${USED_KEY:-none}") | req: $reqid | 响应 ${size:-0} bytes"
+
+  # HTTP 200 但个别输出失败(scrape 各格式独立 success 标志):提前向 agent 示警,防把 data:null 当空页
+  if [[ "$HTTP_CODE" == "2"* ]]; then
+    local badfmt
+    badfmt="$(jq -r '[to_entries[]? | select((.value|type)=="object" and .value.success? == false) | .key] | join(",")' "$f" 2>/dev/null)"
+    [[ -n "$badfmt" ]] && warn "HTTP 200 但以下输出失败(success:false,其余输出不受影响): $badfmt — 看该格式的 code 字段定位原因,别把 data:null 当成页面为空"
+  fi
 
   if [[ "$HTTP_CODE" != 2* ]]; then
     local emsg
@@ -332,7 +342,11 @@ cmd_scrape() {
   if [[ -n "$parser" ]]; then
     local pp
     pp="$(jq -cn --arg n "$parser" '{type:"prebuilt", parser:$n}')"
-    [[ -n "$parser_limit" ]] && pp="$(jq -cn --argjson l "$parser_limit" --argjson pp "$pp" '$pp + {limit:$l}')"
+    if [[ -n "$parser_limit" ]]; then
+      (( parser_limit > 1000 )) && { warn "--parser-limit 上限 1000,已自动调整为 1000"; parser_limit=1000; }
+      (( parser_limit < 1 )) && parser_limit=1
+      pp="$(jq -cn --argjson l "$parser_limit" --argjson pp "$pp" '$pp + {limit:$l}')"
+    fi
     [[ -n "$parser_sort" ]] && pp="$(jq -cn --arg s "$parser_sort" --argjson pp "$pp" '$pp + {sort:$s}')"
     p="$(jq -cn --argjson pp "$pp" --argjson p "$p" '$p + {parseParams:$pp}')"
   fi
@@ -351,7 +365,13 @@ cmd_scrape() {
   (( fresh )) && p="$(jq -cn --argjson p "$p" '$p + {maxAgeMs:0}')"
   [[ -n "$maxage" ]] && p="$(jq -cn --argjson ms "$maxage" --argjson p "$p" '$p + {maxAgeMs:$ms}')"
   if [[ -n "$timeout_ms" || $partial == 1 ]]; then
-    p="$(jq -cn --argjson ms "${timeout_ms:-30000}" --argjson p "$p" '$p + {timeoutOpts:{milliseconds:$ms, behavior:"return-partial"}}')"
+    # behavior 解耦: 只传 --timeout 用 fail(超时返 408 不扣费);加 --partial 才拿部分结果(照常扣费)
+    local beh="fail"
+    if (( partial )); then
+      beh="return-partial"
+      (( timeout_ms < 5000 )) && { timeout_ms=5000; warn "--partial 需要 ≥5000ms 超时,已自动抬升到 5000"; }
+    fi
+    p="$(jq -cn --argjson ms "${timeout_ms:-30000}" --arg b "$beh" --argjson p "$p" '$p + {timeoutOpts:{milliseconds:$ms, behavior:$b}}')"
   fi
 
   new_body; printf '%s' "$p" >"$REQ_BODY"
@@ -556,6 +576,7 @@ cmd_brand() {
     domain="${domain#http://}"; domain="${domain#https://}"; domain="${domain%%/*}"
     p="$(jq -cn --arg d "$domain" '{type:"by_domain", domain:$d}')"
   elif [[ -n "$name" ]]; then
+    (( ${#name} < 3 || ${#name} > 30 )) && die "brand --name 长度须 3-30 字符(官方硬约束,超限 422)"
     p="$(jq -cn --arg n "$name" '{type:"by_name", name:$n}')"
     [[ -n "$cgl" ]] && p="$(jq -cn --arg c "$cgl" --argjson p "$p" '$p + {country_gl:$c}')"
   elif [[ -n "$email" ]]; then
@@ -1107,7 +1128,7 @@ context-dev — Context.dev API 直调工具 (bash + curl + jq)
     --rules JSON|@file(自定义CSS) --parser NAME(预置解析器,与 --rules 互斥)
     (--query/--schema/--rules/--parser 会自动开启对应格式,无需重复写 --formats)
     --parser-limit N --parser-sort newest|oldest|relevant|highest|lowest
-      (sort/limit 仅 google-maps-reviews 与 reddit-* 有效;
+      (limit 仅 google-maps-reviews/reddit-*;sort 仅 google-maps-reviews;
        reddit 排序在 URL 加 ?sort=top|new|qa,yelp 翻页在 URL 加 ?start=20)
     --prefer-md(优先站点自带 Markdown) --page-numbers(PDF 加 <!-- page N --> 标记)
     --fresh --country XX --wait-for ms|selector
