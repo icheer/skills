@@ -12,7 +12,7 @@ description: >
 
 一个轻量级、高性能的无头浏览器自动化工具,基于 Rust 编写的 Obscura 引擎。
 
-> **当前已知最新版本**: Obscura v0.2.6
+> **当前已知最新版本**: Obscura v0.2.7
 > **升级**: 运行 `bash scripts/install-obscura.sh` (Linux/macOS) 或 `.\scripts\install-obscura.ps1` (Windows)
 
 ## 📋 功能概览
@@ -39,6 +39,8 @@ bash scripts/install-obscura.sh
 # Windows PowerShell
 .\scripts\install-obscura.ps1
 ```
+
+> Windows 发行包已内置所需的 Visual C++ 运行库 DLL,无需额外安装 VC++ Redistributable。
 
 ### 基础使用
 
@@ -389,6 +391,10 @@ obscura --storage-dir ./browser-data \
   fetch https://example.com/dashboard --dump text
 ```
 
+> **serve 模式下的连接隔离**: 多个 CDP 客户端连接同一个 `--storage-dir` 的 serve 实例时,
+> 每个连接获得独立的 localStorage 写时复制快照和全新的 IndexedDB,互不污染;
+> 连接关闭后,变更过的 localStorage 键会合并回持久 profile。
+
 #### 5.2 导出 Cookies
 
 ```bash
@@ -663,7 +669,7 @@ await browser.close();
 
 ### 9. MCP 服务器模式 (`obscura mcp`)
 
-面向 Agent/LLM 的浏览器自动化工具集,暴露 `browser_snapshot`、`browser_evaluate`、`browser_click`、`browser_type`、`browser_fill_form`、`browser_wait_for`、`browser_wait_for_function`、`browser_navigate`、`browser_tabs`、`browser_take_screenshot` 等工具。
+面向 Agent/LLM 的浏览器自动化工具集,暴露 `browser_snapshot`、`browser_evaluate`、`browser_click`、`browser_type`、`browser_fill_form`、`browser_wait_for`、`browser_wait_for_function`、`browser_navigate`、`browser_tabs`、`browser_take_screenshot` 等工具;另有 `web_search` 联网搜索工具,需显式启用(见下文)。
 
 ```bash
 # stdio 模式（供 MCP 客户端以子进程方式拉起）
@@ -677,12 +683,25 @@ obscura mcp --http --stealth --proxy socks5://proxy:1080 \
   --font-dir /usr/share/fonts --port 3000
 ```
 
+#### 9.1 启用 web_search(可选)
+
+默认关闭。设置环境变量后,MCP 工具集会多出 `web_search`——用 Keenable 搜索网页,再用 `browser_navigate` 打开结果,形成"搜索 → 打开 → 提取"的闭环:
+
+```bash
+# 启用(注意: 启用后搜索查询会发送给 Keenable 外部服务)
+OBSCURA_WEB_SEARCH=keenable obscura mcp --http --port 3000
+
+# 可选: 配置 API key(不配则用公共端点)
+KEENABLE_API_KEY=your-key OBSCURA_WEB_SEARCH=keenable obscura mcp
+```
+
 **工具行为要点:**
 - `browser_snapshot`: 返回可操作引用(accessible name、控件状态、可见文本),后续动作用引用定位;过期引用会在动作前被拒绝
 - `browser_evaluate`: 脚本执行一次、自动 await 返回的 Promise;失败时返回 `isError: true` 而非报错中断;多次调用之间顶层 `const`/`let` 声明保留可访问,可在前一步声明辅助函数供后续复用
 - `browser_wait_for_function`: 谓词式等待——轮询执行一段 JS 直到返回真值或超时,比固定 `--wait` 更适合等异步渲染完成;等待期间页面任务照常驱动,依赖网络回调的谓词也能完成
 - `browser_fill_form`: 某字段填写失败时在提交前停止,不会带着残缺数据提交
 - 标签页切换保留运行时状态(全局变量、事件监听、pending Promise)
+- 对话框为非交互模式: `alert()` 不阻塞、`confirm()` 返回 `false`、`prompt()` 返回 `null`——点击会触发 `confirm` 的控件(如"确认删除")时页面会走**取消**分支。需要自动接受时,先 `browser_evaluate` 覆盖 `window.confirm = () => true` 再点击
 
 ---
 
@@ -705,6 +724,15 @@ OBSCURA_CDP_TOKEN="$TOKEN" obscura serve --host 0.0.0.0 --port 9222
 # MCP 服务认证
 OBSCURA_MCP_TOKEN="$TOKEN" obscura mcp --http --host 0.0.0.0 --port 3000
 ```
+
+带 `Origin` 头的 WebSocket 连接(如网页端 CDP 客户端)默认只接受端点自身的 Origin,其他 Origin 需显式放行:
+
+```bash
+OBSCURA_CDP_ALLOWED_ORIGINS="https://my-ide.example" \
+  obscura serve --host 0.0.0.0 --port 9222
+```
+
+> 不带 Origin 的原生客户端(Puppeteer/Playwright 等)不受此限制,Host 校验和 Bearer 认证始终生效。
 
 ---
 
@@ -945,6 +973,10 @@ obscura fetch https://example.com --eval "document.title"
 ### 5. 渲染功能
 
 截图和 PDF 功能需要使用带 `render` 特性编译的版本。官方发布的二进制文件已包含此特性。
+
+### 6. HTTP 错误响应
+
+空响应体的 HTTP 错误响应(4xx/5xx)会使导航**失败并报错**,而不是返回一个"成功"的空页面。抓取报错时先确认目标 URL 本身是否返回了错误状态码。
 
 ---
 
